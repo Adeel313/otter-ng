@@ -280,14 +280,18 @@ void NetworkManagerFactory::createInstance()
 		m_proxyFactory = new NetworkProxyFactory();
 		m_instance = new NetworkManagerFactory(QCoreApplication::instance());
 
-		QNetworkProxyFactory::setApplicationProxyFactory(m_proxyFactory);
-
-		///XXX honor proxy environment variables application-wide (QtNetwork and the Qt WebEngine engine both consult QNetworkProxy::applicationProxy())
+		///XXX honor proxy environment variables application-wide (QtNetwork and the Qt WebEngine engine both consult QNetworkProxy::applicationProxy());
+		///note: QNetworkProxy::setApplicationProxy() deletes any factory installed with setApplicationProxyFactory(),
+		///so the application proxy must be set instead of installing the factory when an environment proxy is present
 		QNetworkProxy proxy;
 
 		if (getProxyFromEnvironment(&proxy))
 		{
 			QNetworkProxy::setApplicationProxy(proxy);
+		}
+		else
+		{
+			QNetworkProxyFactory::setApplicationProxyFactory(m_proxyFactory);
 		}
 
 		ContentFiltersManager::createInstance();
