@@ -30,9 +30,11 @@
 #include "SettingsManager.h"
 #include "WebBackend.h"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QJsonArray>
+#include <QtCore/QUrl>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #if QT_VERSION < 0x060000
@@ -227,6 +229,50 @@ NetworkManagerFactory::NetworkManagerFactory(QObject *parent) : QObject(parent)
 #endif
 }
 
+///XXX builds a proxy definition from standard proxy environment variables (http_proxy, HTTP_PROXY, all_proxy, ALL_PROXY); returns true if such variables are set
+static bool getProxyFromEnvironment(QNetworkProxy *proxy)
+{
+	QByteArray proxyValue(qgetenv("http_proxy"));
+
+	if (proxyValue.isEmpty())
+	{
+		proxyValue = qgetenv("HTTP_PROXY");
+	}
+
+	if (proxyValue.isEmpty())
+	{
+		proxyValue = qgetenv("all_proxy");
+	}
+
+	if (proxyValue.isEmpty())
+	{
+		proxyValue = qgetenv("ALL_PROXY");
+	}
+
+	if (proxyValue.isEmpty())
+	{
+		return false;
+	}
+
+	QUrl proxyUrl(QString::fromLatin1(proxyValue));
+
+	if (proxyUrl.scheme().isEmpty() || (proxyUrl.scheme() != QLatin1String("http") && proxyUrl.scheme() != QLatin1String("https")))
+	{
+		proxyUrl = QUrl(QLatin1String("http://") + QString::fromLatin1(proxyValue));
+	}
+
+	const int proxyPort(proxyUrl.port(80));
+
+	if (proxyUrl.host().isEmpty() || proxyPort <= 0)
+	{
+		return false;
+	}
+
+	*proxy = QNetworkProxy(QNetworkProxy::HttpProxy, proxyUrl.host(), static_cast<quint16>(proxyPort));
+
+	return true;
+}
+
 void NetworkManagerFactory::createInstance()
 {
 	if (!m_instance)
@@ -235,6 +281,14 @@ void NetworkManagerFactory::createInstance()
 		m_instance = new NetworkManagerFactory(QCoreApplication::instance());
 
 		QNetworkProxyFactory::setApplicationProxyFactory(m_proxyFactory);
+
+		///XXX honor proxy environment variables application-wide (QtNetwork and the Qt WebEngine engine both consult QNetworkProxy::applicationProxy())
+		QNetworkProxy proxy;
+
+		if (getProxyFromEnvironment(&proxy))
+		{
+			QNetworkProxy::setApplicationProxy(proxy);
+		}
 
 		ContentFiltersManager::createInstance();
 	}
