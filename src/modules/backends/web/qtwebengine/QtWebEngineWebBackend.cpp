@@ -35,7 +35,11 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QRegularExpression>
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineSettings>
+#else
+#include <QtWebEngineCore/QWebEngineSettings>
+#endif
 
 namespace Otter
 {
@@ -45,9 +49,10 @@ QHash<QString, QString> QtWebEngineWebBackend::m_userAgentComponents;
 QMap<QString, QString> QtWebEngineWebBackend::m_userAgents;
 
 QtWebEngineWebBackend::QtWebEngineWebBackend(QObject *parent) : WebBackend(parent),
+	m_defaultProfile(new QWebEngineProfile(QLatin1String("Otter"), this)),
 	m_isInitialized(false)
 {
-	const QString userAgent(QWebEngineProfile::defaultProfile()->httpUserAgent());
+	const QString userAgent(m_defaultProfile->httpUserAgent());
 
 	m_engineVersion = QRegularExpression(QLatin1String("Chrome/([\\d\\.]+)")).match(userAgent).captured(1);
 
@@ -56,9 +61,9 @@ QtWebEngineWebBackend::QtWebEngineWebBackend(QObject *parent) : WebBackend(paren
 	qputenv("QTWEBENGINE_DICTIONARIES_PATH", SpellCheckManager::getDictionariesPath().toLatin1());
 }
 
-void QtWebEngineWebBackend::handleDownloadRequested(QWebEngineDownloadItem *item)
+void QtWebEngineWebBackend::handleDownloadRequested(QtWebEngineDownload *item)
 {
-	if (item->savePageFormat() != QWebEngineDownloadItem::UnknownSaveFormat)
+	if (item->savePageFormat() != QtWebEngineDownload::UnknownSaveFormat)
 	{
 		return;
 	}
@@ -77,7 +82,7 @@ void QtWebEngineWebBackend::handleDownloadRequested(QWebEngineDownloadItem *item
 
 	if (page && page->getWebWidget())
 	{
-		page->getWebWidget()->startTransfer(transfer);
+		page->getWebWidget()->startTransfer(transfer, true);
 
 		return;
 	}
@@ -106,11 +111,11 @@ void QtWebEngineWebBackend::handleDownloadRequested(QWebEngineDownloadItem *item
 
 			if (transfer->getState() == Transfer::CancelledState)
 			{
-				TransfersManager::addTransfer(transfer);
+				transfer->deleteLater();
 			}
 			else
 			{
-				transfer->deleteLater();
+				TransfersManager::addTransfer(transfer);
 			}
 
 			break;
@@ -139,8 +144,12 @@ void QtWebEngineWebBackend::handleDownloadRequested(QWebEngineDownloadItem *item
 
 void QtWebEngineWebBackend::handleOptionChanged(int identifier)
 {
-	QWebEngineProfile *profile(QWebEngineProfile::defaultProfile());
+	QWebEngineProfile *profile(m_defaultProfile);
+#if defined(USE_QT5)
 	QWebEngineSettings *settings(QWebEngineSettings::globalSettings());
+#else
+	QWebEngineSettings *settings(profile->settings());
+#endif
 
 	switch (identifier)
 	{
@@ -184,7 +193,7 @@ void QtWebEngineWebBackend::handleOptionChanged(int identifier)
 	}
 	else if (optionName.startsWith(QLatin1String("Permissions/")))
 	{
-		settings->setAttribute(QWebEngineSettings::AutoLoadImages, (SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption).toString() != QLatin1String("onlyCached")));
+		settings->setAttribute(QWebEngineSettings::AutoLoadImages, (SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption).toString() != QLatin1String("disabled")));
 		settings->setAttribute(QWebEngineSettings::PluginsEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnablePluginsOption).toString() != QLatin1String("disabled"));
 		settings->setAttribute(QWebEngineSettings::JavascriptEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnableJavaScriptOption).toBool());
 		settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, SettingsManager::getOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption).toBool());
@@ -226,7 +235,7 @@ WebWidget* QtWebEngineWebBackend::createWidget(const QVariantMap &parameters, Co
 
 QWebEngineProfile* QtWebEngineWebBackend::getDefaultProfile()
 {
-	QWebEngineProfile *profile(QWebEngineProfile::defaultProfile());
+	QWebEngineProfile *profile(m_defaultProfile);
 
 	if (!m_isInitialized)
 	{
@@ -234,7 +243,11 @@ QWebEngineProfile* QtWebEngineWebBackend::getDefaultProfile()
 
 		ContentFiltersManager::initialize();
 
+#if defined(USE_QT5)
 		QWebEngineSettings *settings(QWebEngineSettings::globalSettings());
+#else
+		QWebEngineSettings *settings(profile->settings());
+#endif
 
 		profile->setHttpAcceptLanguage(NetworkManagerFactory::getAcceptLanguage());
 		profile->setHttpUserAgent(getUserAgent());

@@ -136,6 +136,7 @@ QString normalizeObjectName(QString name, const QString &suffix = {});
 QString normalizePath(const QString &path);
 QString getTopLevelDomain(const QUrl &url);
 QString getStandardLocation(QStandardPaths::StandardLocation type);
+QUrl fromUserInput(const QString &input);
 QUrl expandUrl(const QUrl &url);
 QUrl normalizeUrl(QUrl url);
 QColor createColor(const QUrl &url);

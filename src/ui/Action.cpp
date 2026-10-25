@@ -196,13 +196,18 @@ void Action::setExecutor(ActionExecutor::Object executor)
 {
 	const ActionsManager::ActionDefinition definition(getDefinition());
 	const QMetaMethod updateStateMethod(getMethod("updateState()"));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const QMetaMethod handleArbitraryActionsStateChangedMethod(getMethod("handleArbitraryActionsStateChanged(QList<int>)"));
+	const QMetaMethod handleCategorizedActionsStateChangedMethod(getMethod("handleCategorizedActionsStateChanged(QList<int>)"));
+#else
 	const QMetaMethod handleArbitraryActionsStateChangedMethod(getMethod("handleArbitraryActionsStateChanged(QVector<int>)"));
-	const QMetaMethod handleCategorizedActionsStateChangeddMethod(getMethod("handleCategorizedActionsStateChanged(QVector<int>)"));
+	const QMetaMethod handleCategorizedActionsStateChangedMethod(getMethod("handleCategorizedActionsStateChanged(QVector<int>)"));
+#endif
 	const bool isExecutorValid(executor.isValid());
 
 	if (m_executor.isValid())
 	{
-		m_executor.disconnectSignals(this, &updateStateMethod, &handleArbitraryActionsStateChangedMethod, &handleCategorizedActionsStateChangeddMethod);
+		m_executor.disconnectSignals(this, &updateStateMethod, &handleArbitraryActionsStateChangedMethod, &handleCategorizedActionsStateChangedMethod);
 	}
 
 	if (isExecutorValid)
@@ -245,7 +250,7 @@ void Action::setExecutor(ActionExecutor::Object executor)
 
 	if (isExecutorValid)
 	{
-		m_executor.connectSignals(this, &updateStateMethod, &handleArbitraryActionsStateChangedMethod, &handleCategorizedActionsStateChangeddMethod);
+		m_executor.connectSignals(this, &updateStateMethod, &handleArbitraryActionsStateChangedMethod, &handleCategorizedActionsStateChangedMethod);
 	}
 }
 
@@ -292,7 +297,9 @@ QString Action::getTextOverride() const
 
 QMetaMethod Action::getMethod(const char *method) const
 {
-	return metaObject()->method(metaObject()->indexOfMethod(method));
+	const int index(metaObject()->indexOfMethod(method));
+
+	return (index >= 0) ? metaObject()->method(index) : QMetaMethod();
 }
 
 ActionsManager::ActionDefinition Action::getDefinition() const

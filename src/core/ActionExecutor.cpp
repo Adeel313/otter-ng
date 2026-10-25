@@ -45,8 +45,13 @@ void ActionExecutor::Object::connectSignals(const QObject *receiver, const QMeta
 	QObject *sender(m_object.data());
 	const QMetaObject *metaObject(sender->metaObject());
 	const QMetaMethod actionsStateChangedSignal(getMethod(metaObject, "actionsStateChanged()"));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const QMetaMethod arbitraryActionsStateChangedSignal(getMethod(metaObject, "arbitraryActionsStateChanged(QList<int>)"));
+	const QMetaMethod categorizedActionsStateChangedSignal(getMethod(metaObject, "categorizedActionsStateChanged(QList<int>)"));
+#else
 	const QMetaMethod arbitraryActionsStateChangedSignal(getMethod(metaObject, "arbitraryActionsStateChanged(QVector<int>)"));
 	const QMetaMethod categorizedActionsStateChangedSignal(getMethod(metaObject, "categorizedActionsStateChanged(QVector<int>)"));
+#endif
 
 	if (actionsStateChangedSignal.isValid() && actionsStateChangedMethod)
 	{
@@ -74,8 +79,13 @@ void ActionExecutor::Object::disconnectSignals(const QObject *receiver, const QM
 	QObject *sender(m_object.data());
 	const QMetaObject *metaObject(sender->metaObject());
 	const QMetaMethod actionsStateChangedSignal(getMethod(metaObject, "actionsStateChanged()"));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const QMetaMethod arbitraryActionsStateChangedSignal(getMethod(metaObject, "arbitraryActionsStateChanged(QList<int>)"));
+	const QMetaMethod categorizedActionsStateChangedSignal(getMethod(metaObject, "categorizedActionsStateChanged(QList<int>)"));
+#else
 	const QMetaMethod arbitraryActionsStateChangedSignal(getMethod(metaObject, "arbitraryActionsStateChanged(QVector<int>)"));
 	const QMetaMethod categorizedActionsStateChangedSignal(getMethod(metaObject, "categorizedActionsStateChanged(QVector<int>)"));
+#endif
 
 	if (actionsStateChangedSignal.isValid() && actionsStateChangedMethod)
 	{
@@ -132,7 +142,9 @@ ActionsManager::ActionDefinition::State ActionExecutor::Object::getActionState(i
 
 QMetaMethod ActionExecutor::Object::getMethod(const QMetaObject *metaObject, const char *method)
 {
-	return metaObject->method(metaObject->indexOfSignal(method));
+	const int index(metaObject->indexOfSignal(method));
+
+	return (index >= 0) ? metaObject->method(index) : QMetaMethod();
 }
 
 bool ActionExecutor::Object::isValid() const

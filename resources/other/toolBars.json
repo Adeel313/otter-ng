@@ -39,8 +39,7 @@
 			"GoBackAction",
 			"GoForwardAction",
 			"ReloadOrStopAction",
-			"AddressWidget",
-			"SearchWidget"
+			"AddressWidget"
 		]
 	},
 	{

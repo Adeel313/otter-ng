@@ -22,17 +22,27 @@
 
 #include "../../../../core/TransfersManager.h"
 
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineDownloadItem>
+#else
+#include <QtWebEngineCore/QWebEngineDownloadRequest>
+#endif
 
 namespace Otter
 {
+
+#if defined(USE_QT5)
+using QtWebEngineDownload = QWebEngineDownloadItem;
+#else
+using QtWebEngineDownload = QWebEngineDownloadRequest;
+#endif
 
 class QtWebEngineTransfer final : public Transfer
 {
 	Q_OBJECT
 
 public:
-	explicit QtWebEngineTransfer(QWebEngineDownloadItem *item, TransferOptions options = CanAskForPathOption, QObject *parent = nullptr);
+	explicit QtWebEngineTransfer(QtWebEngineDownload *item, TransferOptions options = CanAskForPathOption, QObject *parent = nullptr);
 
 	QUrl getSource() const override;
 	QString getSuggestedFileName() override;
@@ -44,10 +54,11 @@ public:
 
 public slots:
 	void cancel() override;
+	void setOpenCommand(const QString &command) override;
 	bool setTarget(const QString &target, bool canOverwriteExisting = false) override;
 
 private:
-	QPointer<QWebEngineDownloadItem> m_item;
+	QPointer<QtWebEngineDownload> m_item;
 };
 
 }

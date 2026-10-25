@@ -24,8 +24,13 @@
 #include "../../../../core/SessionsManager.h"
 #include "../../../../ui/WebWidget.h"
 
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineCertificateError>
 #include <QtWebEngineWidgets/QWebEnginePage>
+#else
+#include <QtWebEngineCore/QWebEngineCertificateError>
+#include <QtWebEngineCore/QWebEnginePage>
+#endif
 
 namespace Otter
 {
@@ -49,6 +54,7 @@ public:
 	};
 
 	explicit QtWebEnginePage(bool isPrivate, QtWebEngineWebWidget *parent);
+	QtWebEnginePage(QWebEngineProfile *profile, QtWebEngineWebWidget *parent);
 
 	void setHistory(const Session::Window::History &history);
 	QtWebEngineWebWidget* getWebWidget() const;
@@ -69,7 +75,10 @@ protected:
 	QString createJavaScriptList(const QStringList &rules) const;
 	QStringList chooseFiles(FileSelectionMode mode, const QStringList &oldFiles, const QStringList &acceptedMimeTypes) override;
 	bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override;
+	bool shouldAcceptCertificate(const QWebEngineCertificateError &error);
+#if defined(USE_QT5)
 	bool certificateError(const QWebEngineCertificateError &error) override;
+#endif
 	bool javaScriptConfirm(const QUrl &url, const QString &message) override;
 	bool javaScriptPrompt(const QUrl &url, const QString &message, const QString &defaultValue, QString *result) override;
 
@@ -82,6 +91,8 @@ private:
 	QVector<QtWebEnginePage*> m_popups;
 	QVector<HistoryEntryInformation> m_history;
 	NavigationType m_previousNavigationType;
+	QString m_editingStateMessageToken;
+	QString m_passwordMessageToken;
 	bool m_isIgnoringJavaScriptPopups;
 	bool m_isViewingMedia;
 	bool m_isPopup;

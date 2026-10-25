@@ -432,6 +432,8 @@ void LineEditWidget::mousePressEvent(QMouseEvent *event)
 
 void LineEditWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+	QLineEdit::mouseReleaseEvent(event);
+
 	if (m_shouldSelectAllOnRelease)
 	{
 		disconnect(this, &LineEditWidget::selectionChanged, this, &LineEditWidget::clearSelectAllOnRelease);
@@ -440,8 +442,6 @@ void LineEditWidget::mouseReleaseEvent(QMouseEvent *event)
 
 		m_shouldSelectAllOnRelease = false;
 	}
-
-	QLineEdit::mouseReleaseEvent(event);
 }
 
 void LineEditWidget::dropEvent(QDropEvent *event)

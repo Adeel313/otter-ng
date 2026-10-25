@@ -31,6 +31,7 @@
 #include "../modules/widgets/search/SearchWidget.h"
 #include "../modules/windows/web/WebContentsWidget.h"
 
+#include <QtCore/QDebug>
 #include <QtCore/QTimer>
 #include <QtGui/QPainter>
 #include <QtWidgets/QBoxLayout>
@@ -252,6 +253,7 @@ void Window::markAsActive(bool updateLastActivity)
 
 	if (!m_contentsWidget)
 	{
+		qDebug() << "OTTER-DEBUG markAsActive deferred load url:" << m_session.getUrl();
 		setUrl(m_session.getUrl(), false);
 	}
 
@@ -321,7 +323,9 @@ void Window::setOption(int identifier, const QVariant &value)
 
 void Window::setUrl(const QUrl &url, bool isTypedIn)
 {
+	qDebug() << "OTTER-DEBUG Window::setUrl" << url << "typed:" << isTypedIn << "sessionUrl:" << m_session.getUrl();
 	ContentsWidget *newWidget(nullptr);
+	const bool isRestoring(!m_contentsWidget && m_session.history.isValid() && !isTypedIn && url == QUrl(m_session.getUrl()));
 
 	if (HandlersManager::canViewUrl(url))
 	{
@@ -336,7 +340,10 @@ void Window::setUrl(const QUrl &url, bool isTypedIn)
 
 		if (newWidget)
 		{
-			newWidget->setUrl(url);
+			if (!isRestoring)
+			{
+				newWidget->setUrl(url);
+			}
 
 			if (!newWidget->canClone())
 			{
@@ -344,8 +351,6 @@ void Window::setUrl(const QUrl &url, bool isTypedIn)
 			}
 		}
 	}
-
-	const bool isRestoring(!m_contentsWidget && m_session.history.isValid());
 
 	if (!newWidget && (!m_contentsWidget || m_contentsWidget->getType() != QLatin1String("web")))
 	{
@@ -361,7 +366,7 @@ void Window::setUrl(const QUrl &url, bool isTypedIn)
 			return;
 		}
 
-		setContentsWidget(newWidget);
+		setContentsWidget(newWidget, isRestoring);
 	}
 
 	if (m_contentsWidget && url.isValid())
@@ -401,7 +406,7 @@ void Window::setPinned(bool isPinned)
 	}
 }
 
-void Window::setContentsWidget(ContentsWidget *widget)
+void Window::setContentsWidget(ContentsWidget *widget, bool restoreHistory)
 {
 	if (m_contentsWidget)
 	{
@@ -440,9 +445,11 @@ void Window::setContentsWidget(ContentsWidget *widget)
 
 	layout()->addWidget(m_contentsWidget);
 
-	if (m_session.history.isValid() || !m_contentsWidget->getWebWidget() || m_contentsWidget->getWebWidget()->getRequestedUrl().isEmpty())
+	const Session::Window::History history(restoreHistory ? m_session.history : Session::Window::History());
+
+	if (history.isValid() || !m_contentsWidget->getWebWidget() || m_contentsWidget->getWebWidget()->getRequestedUrl().isEmpty())
 	{
-		m_contentsWidget->setHistory(m_session.history);
+		m_contentsWidget->setHistory(history);
 		m_contentsWidget->setZoom(m_session.getZoom());
 	}
 
@@ -489,6 +496,8 @@ void Window::setContentsWidget(ContentsWidget *widget)
 	connect(m_contentsWidget, &ContentsWidget::titleChanged, this, &Window::titleChanged);
 	connect(m_contentsWidget, &ContentsWidget::urlChanged, this, [&](const QUrl &url)
 	{
+		SessionsManager::markSessionAsModified();
+
 		emit urlChanged(url, false);
 	});
 	connect(m_contentsWidget, &ContentsWidget::iconChanged, this, &Window::iconChanged);

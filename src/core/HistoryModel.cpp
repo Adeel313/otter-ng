@@ -103,10 +103,17 @@ HistoryModel::HistoryModel(const QString &path, HistoryType type, QObject *paren
 	for (const QJsonValue &entryValue: historyArray)
 	{
 		const QJsonObject entryObject(entryValue.toObject());
+		const QUrl url(entryObject.value(QLatin1String("url")).toString());
+
+		if (url.isEmpty())
+		{
+			continue;
+		}
+
 		QDateTime dateTime(QDateTime::fromString(entryObject.value(QLatin1String("time")).toString(), Qt::ISODate));
 		dateTime.setTimeZone(QTimeZone::utc());
 
-		addEntry(QUrl(entryObject.value(QLatin1String("url")).toString()), entryObject.value(QLatin1String("title")).toString(), {}, dateTime);
+		addEntry(url, entryObject.value(QLatin1String("title")).toString(), {}, dateTime);
 	}
 
 	setSortRole(TimeVisitedRole);
@@ -219,9 +226,9 @@ HistoryModel::Entry* HistoryModel::addEntry(const QUrl &url, const QString &titl
 	Entry *entry(new Entry());
 	entry->setIcon(icon);
 
+	insertRow(0, entry);
 	const QModelIndex index(entry->index());
 
-	insertRow(0, entry);
 	setData(index, url, UrlRole);
 	setData(index, title, TitleRole);
 	setData(index, date, TimeVisitedRole);
@@ -284,6 +291,7 @@ QVector<HistoryModel::HistoryEntryMatch> HistoryModel::findEntries(const QString
 	QVector<HistoryEntryMatch> allMatches;
 	QVector<HistoryEntryMatch> currentMatches;
 	QMultiMap<QDateTime, HistoryEntryMatch> matchesMap;
+	QMultiMap<QDateTime, HistoryEntryMatch> partialMatchesMap;
 	QHash<QUrl, QVector<Entry*> >::const_iterator urlsIterator;
 
 	for (urlsIterator = m_urls.constBegin(); urlsIterator != m_urls.constEnd(); ++urlsIterator)
@@ -317,6 +325,19 @@ QVector<HistoryModel::HistoryEntryMatch> HistoryModel::findEntries(const QString
 
 			matchedEntries.append(match.entry);
 		}
+		else if (!prefix.isEmpty() && (urlsIterator.key().toString().contains(prefix, Qt::CaseInsensitive) || entry->getTitle().contains(prefix, Qt::CaseInsensitive)))
+		{
+			HistoryEntryMatch match;
+			match.entry = entry;
+
+			if (markAsTypedIn)
+			{
+				match.isTypedIn = true;
+			}
+
+			partialMatchesMap.insert(match.entry->data(TimeVisitedRole).toDateTime(), match);
+			matchedEntries.append(match.entry);
+		}
 	}
 
 	currentMatches = matchesMap.values().toVector();
@@ -324,6 +345,13 @@ QVector<HistoryModel::HistoryEntryMatch> HistoryModel::findEntries(const QString
 	matchesMap.clear();
 
 	allMatches.reserve(currentMatches.count());
+
+	for (int i = (currentMatches.count() - 1); i >= 0; --i)
+	{
+		allMatches.append(currentMatches.at(i));
+	}
+
+	currentMatches = partialMatchesMap.values().toVector();
 
 	for (int i = (currentMatches.count() - 1); i >= 0; --i)
 	{

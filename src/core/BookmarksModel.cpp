@@ -1356,6 +1356,7 @@ QVector<BookmarksModel::BookmarkMatch> BookmarksModel::findBookmarks(const QStri
 	QVector<BookmarkMatch> allMatches;
 	QVector<BookmarkMatch> currentMatches;
 	QMultiMap<QDateTime, BookmarkMatch> matchesMap;
+	QMultiMap<QDateTime, BookmarkMatch> partialMatchesMap;
 	QHash<QString, Bookmark*>::const_iterator keywordsIterator;
 
 	for (keywordsIterator = m_keywords.constBegin(); keywordsIterator != m_keywords.constEnd(); ++keywordsIterator)
@@ -1406,11 +1407,26 @@ QVector<BookmarksModel::BookmarkMatch> BookmarksModel::findBookmarks(const QStri
 
 			matchedBookmarks.append(match.bookmark);
 		}
+		else if (!prefix.isEmpty() && (urlsIterator.key().toString().contains(prefix, Qt::CaseInsensitive) || urlsIterator.value().value(0)->getTitle().contains(prefix, Qt::CaseInsensitive)))
+		{
+			BookmarkMatch match;
+			match.bookmark = urlsIterator.value().value(0);
+
+			partialMatchesMap.insert(match.bookmark->getTimeVisited(), match);
+			matchedBookmarks.append(match.bookmark);
+		}
 	}
 
 	currentMatches = matchesMap.values().toVector();
 
 	matchesMap.clear();
+
+	for (int i = (currentMatches.count() - 1); i >= 0; --i)
+	{
+		allMatches.append(currentMatches.at(i));
+	}
+
+	currentMatches = partialMatchesMap.values().toVector();
 
 	for (int i = (currentMatches.count() - 1); i >= 0; --i)
 	{

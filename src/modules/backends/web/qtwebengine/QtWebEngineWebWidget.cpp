@@ -42,21 +42,42 @@
 #include "../../../../ui/WebsitePreferencesDialog.h"
 
 #include <QtCore/QEventLoop>
+#include <QtCore/QDebug>
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeData>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
 #include <QtCore/QtMath>
+#include <algorithm>
 #include <QtGui/QClipboard>
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QImageWriter>
+#include <QtGui/QKeyEvent>
+#include <QtGui/QPainter>
 #include <QtPrintSupport/QPrintPreviewDialog>
 #include <QtWebEngineCore/QWebEngineCookieStore>
 #include <QtWebEngineCore/QWebEngineFindTextResult>
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineHistory>
 #include <QtWebEngineWidgets/QWebEngineProfile>
 #include <QtWebEngineWidgets/QWebEngineScript>
 #include <QtWebEngineWidgets/QWebEngineSettings>
+#else
+#include <QtWebEngineCore/QWebEngineHistory>
+#include <QtWebEngineCore/QWebEngineHttpRequest>
+#include <QtWebEngineCore/QWebEngineProfile>
+#include <QtWebEngineCore/QWebEngineScript>
+#include <QtWebEngineCore/QWebEngineSettings>
+#include <QtPdf/QPdfDocument>
+#endif
+#if defined(USE_QT5)
 #include <QtWidgets/QAction>
+#else
+#include <QtGui/QAction>
+#endif
 #include <QtWidgets/QVBoxLayout>
 
 namespace Otter
@@ -90,19 +111,57 @@ QtWebEngineWebWidget::QtWebEngineWebWidget(const QVariantMap &parameters, WebBac
 	m_inspectorWidget(nullptr),
 	m_page(new QtWebEnginePage(SessionsManager::calculateOpenHints(parameters).testFlag(SessionsManager::PrivateOpen), this)),
 	m_requestInterceptor(new QtWebEngineUrlRequestInterceptor(this)),
+	m_imageReloadTimer(new QTimer(this)),
 	m_loadingState(FinishedLoadingState),
 	m_canGoForwardValue(UnknownValue),
 	m_documentLoadingProgress(0),
 	m_focusProxyTimer(0),
+	m_imageReloadAttempts(0),
 	m_updateNavigationActionsTimer(0),
 	m_isClosing(false),
 	m_isEditing(false),
 	m_isFullScreen(false),
+	m_isReloadingImage(false),
 	m_isTypedIn(false)
 {
 	setFocusPolicy(Qt::StrongFocus);
 
 	m_page->setUrlRequestInterceptor(m_requestInterceptor);
+	m_imageReloadTimer->setInterval(100);
+	connect(m_imageReloadTimer, &QTimer::timeout, this, [this]()
+	{
+		if (!m_isReloadingImage)
+		{
+			m_imageReloadTimer->stop();
+
+			return;
+		}
+
+		if (++m_imageReloadAttempts > 300)
+		{
+			qWarning() << "Timed out while reloading image" << m_hitResult.imageUrl;
+			finishImageReload();
+
+			return;
+		}
+
+		m_page->runJavaScript(QStringLiteral("(()=>{const image=window.__otterImageReloadTarget;if(!image){return 'missing';}if(!image.complete){return 'loading';}return (image.naturalWidth>0?'loaded':'failed');})()"), [this](const QVariant &result)
+		{
+			const QString state(result.toString());
+
+			if (state == QLatin1String("loading"))
+			{
+				return;
+			}
+
+			if (state == QLatin1String("failed"))
+			{
+				qWarning() << "Failed to reload image" << m_hitResult.imageUrl;
+			}
+
+			finishImageReload();
+		});
+	});
 
 	connect(m_page, &QtWebEnginePage::loadProgress, m_page, [&](int progress)
 	{
@@ -148,7 +207,63 @@ QtWebEngineWebWidget::QtWebEngineWebWidget(const QVariantMap &parameters, WebBac
 
 QtWebEngineWebWidget::~QtWebEngineWebWidget()
 {
+	finishImageReload();
 	m_isClosing = true;
+}
+
+void QtWebEngineWebWidget::finishImageReload()
+{
+	if (!m_isReloadingImage)
+	{
+		return;
+	}
+
+	m_isReloadingImage = false;
+	m_imageReloadAttempts = 0;
+	m_imageReloadTimer->stop();
+	m_requestInterceptor->clearImageReloadUrl();
+	m_page->runJavaScript(QStringLiteral("delete window.__otterImageReloadTarget;"));
+	m_page->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, (getOption(SettingsManager::Permissions_EnableImagesOption, getUrl()).toString() != QLatin1String("disabled")));
+}
+
+QString QtWebEngineWebWidget::getImageCacheScript(bool onlyCached) const
+{
+	return QStringLiteral("(()=>{if(window.__otterImageCacheObserver){window.__otterImageCacheObserver.disconnect();window.__otterImageCacheObserver=null;}const initialize=()=>{const root=document.documentElement;if(!root){return;}const styleId='otter-cached-images-style';let style=document.getElementById(styleId);if(!%1){if(style){style.remove();}document.querySelectorAll('.otter-cached-image-hidden').forEach(image=>image.classList.remove('otter-cached-image-hidden'));return;}if(!style){style=document.createElement('style');style.id=styleId;style.textContent='img.otter-cached-image-hidden:not(.otter-image-reloaded){object-fit:none!important;object-position:100000px 100000px!important;background-color:rgba(128,128,128,.08);background-image:linear-gradient(135deg,transparent 46%,#888 47%,#888 53%,transparent 54%),linear-gradient(45deg,transparent 46%,#888 47%,#888 53%,transparent 54%);background-repeat:no-repeat;background-position:center;background-size:18px 18px;outline:1px solid rgba(128,128,128,.25)}';(document.head||root).appendChild(style);}const markLoaded=image=>{if(image.complete&&image.naturalWidth>0&&!image.classList.contains('otter-image-reloaded')){image.classList.add('otter-cached-image-hidden');}};const observeImage=image=>{markLoaded(image);image.addEventListener('load',()=>markLoaded(image));};document.querySelectorAll('img').forEach(observeImage);window.__otterImageCacheObserver=new MutationObserver(records=>{for(const record of records){if(record.type==='attributes'){observeImage(record.target);}else{record.addedNodes.forEach(node=>{if(node.nodeType!==Node.ELEMENT_NODE){return;}const images=node.matches('img')?[node]:[];images.push(...node.querySelectorAll('img'));images.forEach(observeImage);});}}});window.__otterImageCacheObserver.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['src','srcset']});};if(document.documentElement){initialize();}else{document.addEventListener('DOMContentLoaded',initialize,{once:true});}})()").arg(onlyCached ? QLatin1String("true") : QLatin1String("false"));
+}
+
+void QtWebEngineWebWidget::reloadImage()
+{
+	if (m_isReloadingImage)
+	{
+		finishImageReload();
+	}
+
+	m_isReloadingImage = true;
+	m_imageReloadAttempts = 0;
+	m_requestInterceptor->setImageReloadUrl(m_hitResult.imageUrl);
+	m_page->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
+
+	const QByteArray imageUrlJson(QJsonDocument(QJsonArray{m_hitResult.imageUrl.toString()}).toJson(QJsonDocument::Compact));
+	const QString imageUrl(QString::fromUtf8(imageUrlJson.mid(1, imageUrlJson.size() - 2)));
+	const QString script(QStringLiteral("(()=>{const element=document.elementFromPoint(%1,%2);const image=element&&(element.tagName.toLowerCase()==='img'?element:element.closest('img'))||Array.from(document.images).find(candidate=>candidate.currentSrc===__IMAGE_URL__||candidate.src===__IMAGE_URL__);if(!image){return false;}image.classList.add('otter-image-reloaded');image.classList.remove('otter-cached-image-hidden');image.removeAttribute('src');image.src=__IMAGE_URL__;return true;})()").arg(m_hitResult.hitPosition.x()).arg(m_hitResult.hitPosition.y()).replace(QLatin1String("__IMAGE_URL__"), imageUrl));
+
+	m_page->runJavaScript(script, [this](const QVariant &result)
+	{
+		if (!m_isReloadingImage)
+		{
+			return;
+		}
+
+		if (!result.toBool())
+		{
+			qWarning() << "Unable to find the selected image while reloading" << m_hitResult.imageUrl;
+			finishImageReload();
+
+			return;
+		}
+
+		m_imageReloadTimer->start();
+	});
 }
 
 void QtWebEngineWebWidget::timerEvent(QTimerEvent *event)
@@ -215,12 +330,35 @@ void QtWebEngineWebWidget::ensureInitialized()
 		m_webView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 		m_webView->installEventFilter(this);
 
+		const QList<QWidget*> descendants(m_webView->findChildren<QWidget*>());
+
+		for (QWidget *descendant : descendants)
+		{
+			descendant->installEventFilter(this);
+		}
+
 		QVBoxLayout *layout(new QVBoxLayout(this));
 		layout->addWidget(m_webView);
 		layout->setContentsMargins(0, 0, 0, 0);
 
 		setLayout(layout);
 	}
+}
+
+bool QtWebEngineWebWidget::hasEditableFocus()
+{
+	return m_page->runScriptSource(QLatin1String(R"JS(
+(() => {
+	let element = document.activeElement;
+	while (element) {
+		if (element.isContentEditable || element.matches('textarea, input, select, [role="textbox"], [role="searchbox"]')) {
+			return true;
+		}
+		element = element.shadowRoot ? element.shadowRoot.activeElement : null;
+	}
+	return false;
+})()
+)JS")).toBool();
 }
 
 void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &parameters, ActionsManager::TriggerType trigger)
@@ -236,7 +374,7 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 
 				if (information.canSave)
 				{
-					m_page->save(information.path, QWebEngineDownloadItem::SingleHtmlSaveFormat);
+					m_page->save(information.path, QtWebEngineDownload::SingleHtmlSaveFormat);
 				}
 			}
 			else
@@ -249,11 +387,11 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 					switch (format)
 					{
 						case CompletePageSaveFormat:
-							m_page->save(path, QWebEngineDownloadItem::CompleteHtmlSaveFormat);
+							m_page->save(path, QtWebEngineDownload::CompleteHtmlSaveFormat);
 
 							break;
 						case MhtmlSaveFormat:
-							m_page->save(path, QWebEngineDownloadItem::MimeHtmlSaveFormat);
+							m_page->save(path, QtWebEngineDownload::MimeHtmlSaveFormat);
 
 							break;
 						case PdfSaveFormat:
@@ -261,7 +399,7 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 
 							break;
 						default:
-							m_page->save(path, QWebEngineDownloadItem::SingleHtmlSaveFormat);
+							m_page->save(path, QtWebEngineDownload::SingleHtmlSaveFormat);
 
 							break;
 					}
@@ -417,15 +555,7 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 		case ActionsManager::ReloadImageAction:
 			if (!m_hitResult.imageUrl.isEmpty())
 			{
-				if (getUrl().matches(m_hitResult.imageUrl, (QUrl::NormalizePathSegments | QUrl::RemoveFragment | QUrl::StripTrailingSlash)))
-				{
-					triggerAction(ActionsManager::ReloadAndBypassCacheAction, {}, trigger);
-				}
-				else
-				{
-//TODO Improve
-					m_page->runJavaScript(QStringLiteral("let images = document.querySelectorAll('img[src=\"%1\"]'); for (let i = 0; i < images.length; ++i) { images[i].src = ''; images[i].src = \'%1\'; }").arg(m_hitResult.imageUrl.toString()));
-				}
+				reloadImage();
 			}
 
 			break;
@@ -735,11 +865,11 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 
 			break;
 		case ActionsManager::ScrollPageUpAction:
-			m_page->runJavaScript(QLatin1String("window.scrollByPages(1)"));
+			m_page->runJavaScript(QLatin1String("window.scrollBy(0, -window.innerHeight)"));
 
 			break;
 		case ActionsManager::ScrollPageDownAction:
-			m_page->runJavaScript(QLatin1String("window.scrollByPages(-1)"));
+			m_page->runJavaScript(QLatin1String("window.scrollBy(0, window.innerHeight)"));
 
 			break;
 		case ActionsManager::ScrollPageLeftAction:
@@ -890,6 +1020,7 @@ void QtWebEngineWebWidget::search(const QString &query, const QString &searchEng
 
 void QtWebEngineWebWidget::print(QPrinter *printer)
 {
+#if defined(USE_QT5)
 	QEventLoop eventLoop;
 
 	m_page->print(printer, [&](bool)
@@ -898,6 +1029,96 @@ void QtWebEngineWebWidget::print(QPrinter *printer)
 	});
 
 	eventLoop.exec();
+#else
+	QByteArray pdfData;
+	QEventLoop eventLoop;
+
+	m_page->printToPdf([&](const QByteArray &data)
+	{
+		pdfData = data;
+		eventLoop.quit();
+	});
+
+	eventLoop.exec();
+
+	if (pdfData.isEmpty())
+	{
+		qWarning() << "QtWebEngine returned no PDF data for printing";
+
+		return;
+	}
+
+	QTemporaryFile pdfFile;
+
+	if (!pdfFile.open() || pdfFile.write(pdfData) != pdfData.size() || !pdfFile.flush())
+	{
+		qWarning() << "Unable to save temporary PDF data for printing";
+
+		return;
+	}
+
+	QPdfDocument document;
+
+	if (document.load(pdfFile.fileName()) != QPdfDocument::Error::None)
+	{
+		qWarning() << "Unable to load temporary PDF data for printing";
+
+		return;
+	}
+
+	if (document.status() == QPdfDocument::Status::Loading)
+	{
+		QEventLoop documentEventLoop;
+		QObject::connect(&document, &QPdfDocument::statusChanged, &documentEventLoop, [&](QPdfDocument::Status status)
+		{
+			if (status != QPdfDocument::Status::Loading)
+			{
+				documentEventLoop.quit();
+			}
+		});
+		documentEventLoop.exec();
+	}
+
+	if (document.status() != QPdfDocument::Status::Ready)
+	{
+		qWarning() << "Temporary PDF data was not ready for printing";
+
+		return;
+	}
+
+	QPainter painter(printer);
+
+	if (!painter.isActive())
+	{
+		qWarning() << "Unable to start printer painter for QtWebEngine output";
+
+		return;
+	}
+
+	const QRectF pageRect(printer->pageRect(QPrinter::DevicePixel));
+	const QSize imageSize(qCeil(pageRect.width()), qCeil(pageRect.height()));
+
+	for (int page = 0; page < document.pageCount(); ++page)
+	{
+		if (page > 0 && !printer->newPage())
+		{
+			qWarning() << "Unable to start next page while printing QtWebEngine output";
+
+			break;
+		}
+
+		const QImage image(document.render(page, imageSize));
+
+		if (image.isNull())
+		{
+			qWarning() << "Unable to render PDF page for printing";
+
+			break;
+		}
+
+		painter.drawImage(pageRect, image);
+	}
+#endif
 }
 
 void QtWebEngineWebWidget::viewSource(const QUrl &url)
@@ -925,6 +1146,9 @@ void QtWebEngineWebWidget::viewSource(const QUrl &url)
 
 void QtWebEngineWebWidget::handleLoadStarted()
 {
+	finishImageReload();
+
+	m_isEditing = false;
 	m_lastUrlClickTime = {};
 	m_metaData.clear();
 	m_styleSheets.clear();
@@ -947,6 +1171,21 @@ void QtWebEngineWebWidget::handleLoadFinished()
 {
 	m_loadingState = FinishedLoadingState;
 	m_canGoForwardValue = UnknownValue;
+
+	if (!isPrivate() && getOption(SettingsManager::Browser_RememberPasswordsOption).toBool())
+	{
+		QVector<PasswordsManager::Password> passwords(PasswordsManager::getPasswords(getUrl(), PasswordsManager::FormPassword));
+
+		if (!passwords.isEmpty())
+		{
+			const auto passwordIterator(std::max_element(passwords.cbegin(), passwords.cend(), [](const PasswordsManager::Password &first, const PasswordsManager::Password &second)
+			{
+				return first.timeUsed < second.timeUsed;
+			}));
+
+			fillPassword(*passwordIterator);
+		}
+	}
 
 	notifyNavigationActionsChanged();
 	startReloadTimer();
@@ -975,6 +1214,41 @@ void QtWebEngineWebWidget::handleLoadFinished()
 
 	emit contentStateChanged(getContentState());
 	emit loadingStateChanged(FinishedLoadingState);
+    // Ensure loading state is properly propagated to both tab header and reload icon
+    // The loadingStateChanged signal is connected to Window::loadingStateChanged which
+    // updates TabHandleWidget::handleLoadingStateChanged() for the tab indicator.
+    // Additional handling ensures the reload icon state is also synchronized.
+
+}
+
+void QtWebEngineWebWidget::fillPassword(const PasswordsManager::Password &password)
+{
+	QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/formFiller.js"));
+
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		qWarning() << "Failed to open password form filler resource:" << file.errorString();
+
+		return;
+	}
+
+	QJsonArray fieldsArray;
+
+	for (const PasswordsManager::Password::Field &field: password.fields)
+	{
+		fieldsArray.append(QJsonObject({
+			{QLatin1String("name"), field.name},
+			{QLatin1String("value"), field.value},
+			{QLatin1String("type"), ((field.type == PasswordsManager::PasswordField) ? QLatin1String("password") : QLatin1String("text"))}
+		}));
+	}
+
+	m_page->runJavaScript(QString::fromUtf8(file.readAll()).arg(QString::fromUtf8(QJsonDocument(fieldsArray).toJson(QJsonDocument::Compact))));
+}
+
+void QtWebEngineWebWidget::notifySavePasswordRequested(const PasswordsManager::Password &password, bool isUpdate)
+{
+	emit requestedSavePassword(password, isUpdate);
 }
 
 void QtWebEngineWebWidget::handleViewSourceReplyFinished()
@@ -1007,6 +1281,7 @@ void QtWebEngineWebWidget::handlePrintRequest()
 
 	connect(&printPreviewDialog, &QPrintPreviewDialog::paintRequested, this, [&](QPrinter *printer)
 	{
+#if defined(USE_QT5)
 		QEventLoop eventLoop;
 
 		m_page->print(printer, [&](bool)
@@ -1015,6 +1290,9 @@ void QtWebEngineWebWidget::handlePrintRequest()
 		});
 
 		eventLoop.exec();
+#else
+		print(printer);
+#endif
 	});
 
 	printPreviewDialog.exec();
@@ -1207,9 +1485,10 @@ void QtWebEngineWebWidget::notifyWatchedDataChanged(ChangeWatcher watcher)
 void QtWebEngineWebWidget::updateOptions(const QUrl &url)
 {
 	const QString encoding(getOption(SettingsManager::Content_DefaultCharacterEncodingOption, url).toString());
+	const QString imageOption(getOption(SettingsManager::Permissions_EnableImagesOption, url).toString());
 	QWebEngineSettings *settings(m_page->settings());
 	settings->setAttribute(QWebEngineSettings::AllowRunningInsecureContent, getOption(SettingsManager::Security_AllowMixedContentOption, url).toBool());
-	settings->setAttribute(QWebEngineSettings::AutoLoadImages, (getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() != QLatin1String("onlyCached")));
+	settings->setAttribute(QWebEngineSettings::AutoLoadImages, (imageOption != QLatin1String("disabled")));
 	settings->setAttribute(QWebEngineSettings::DnsPrefetchEnabled, getOption(SettingsManager::Network_EnableDnsPrefetchOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::JavascriptEnabled, getOption(SettingsManager::Permissions_EnableJavaScriptOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, getOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption, url).toBool());
@@ -1218,6 +1497,7 @@ void QtWebEngineWebWidget::updateOptions(const QUrl &url)
 	settings->setAttribute(QWebEngineSettings::ShowScrollBars, getOption(SettingsManager::Interface_ShowScrollBarsOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::WebGLEnabled, getOption(SettingsManager::Permissions_EnableWebglOption, url).toBool());
 	settings->setDefaultTextEncoding((encoding == QLatin1String("auto")) ? QString() : encoding);
+	m_page->runJavaScript(getImageCacheScript(imageOption == QLatin1String("onlyCached")));
 
 	disconnect(m_page, &QtWebEnginePage::geometryChangeRequested, this, &QtWebEngineWebWidget::requestedGeometryChange);
 
@@ -1300,20 +1580,18 @@ void QtWebEngineWebWidget::setScrollPosition(const QPoint &position)
 
 void QtWebEngineWebWidget::setHistory(const Session::Window::History &history)
 {
-	m_page->setHistory(history);
-
 	if (history.entries.isEmpty())
 	{
+		m_page->setHistory(history);
 		updateOptions({});
 	}
 	else
 	{
-		const QUrl url(m_page->history()->itemAt(history.index).url());
+		const QUrl url(history.entries.value(history.index).url);
 
 		setRequestedUrl(url, false, true);
 		updateOptions(url);
-
-		m_page->triggerAction(QWebEnginePage::Reload);
+		m_page->setHistory(history);
 	}
 
 	notifyNavigationActionsChanged();
@@ -1894,13 +2172,20 @@ bool QtWebEngineWebWidget::eventFilter(QObject *object, QEvent *event)
 	switch (event->type())
 	{
 		case QEvent::ChildAdded:
-			if (object == m_webView)
+			if (object == m_webView || (qobject_cast<QWidget*>(object) && m_webView->isAncestorOf(qobject_cast<QWidget*>(object))))
 			{
 				const QChildEvent *childEvent(static_cast<QChildEvent*>(event));
 
 				if (childEvent->child())
 				{
 					childEvent->child()->installEventFilter(this);
+
+					const QList<QWidget*> descendants(childEvent->child()->findChildren<QWidget*>());
+
+					for (QWidget *descendant : descendants)
+					{
+						descendant->installEventFilter(this);
+					}
 				}
 			}
 
@@ -1930,12 +2215,18 @@ bool QtWebEngineWebWidget::eventFilter(QObject *object, QEvent *event)
 					if (mouseEvent)
 					{
 						setClickPosition(mouseEvent->pos());
-						updateHitTestResult(mouseEvent->pos());
 
-						if (mouseEvent->button() == Qt::LeftButton && !getCurrentHitTestResult().linkUrl.isEmpty())
+						if (mouseEvent->button() == Qt::LeftButton)
 						{
 							m_lastUrlClickTime = QDateTime::currentDateTimeUtc();
 						}
+
+						if (m_loadingState == OngoingLoadingState)
+						{
+							return QObject::eventFilter(object, event);
+						}
+
+						updateHitTestResult(mouseEvent->pos());
 					}
 				}
 
@@ -1984,8 +2275,22 @@ bool QtWebEngineWebWidget::eventFilter(QObject *object, QEvent *event)
 			}
 
 			break;
+		case QEvent::KeyPress:
+			if (!m_isEditing)
+			{
+				const QKeyEvent *keyEvent(static_cast<QKeyEvent*>(event));
+
+				if (keyEvent->key() == Qt::Key_Space && (keyEvent->modifiers() == Qt::NoModifier || keyEvent->modifiers() == Qt::ShiftModifier))
+				{
+					m_page->runJavaScript(QStringLiteral("window.scrollBy(0, window.innerHeight * %1)").arg((keyEvent->modifiers() == Qt::ShiftModifier) ? -1 : 1));
+
+					return true;
+				}
+			}
+
+			break;
 		case QEvent::ShortcutOverride:
-			m_isEditing = m_page->runScriptSource(QLatin1String("let element = document.body.querySelector(':focus'); let tagName = (element ? element.tagName.toLowerCase() : ''); let result = false; if (tagName == 'textarea' || tagName == 'input') { let type = (element.type ? element.type.toLowerCase() : ''); if ((type == '' || tagName == 'textarea' || type == 'text' || type == 'search') && !element.hasAttribute('readonly') && !element.hasAttribute('disabled')) { result = true; } } result;")).toBool();
+			m_isEditing = hasEditableFocus();
 
 			if (m_isEditing)
 			{

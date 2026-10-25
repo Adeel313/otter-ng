@@ -116,9 +116,9 @@ InputInterpreter::InterpreterResult InputInterpreter::interpret(const QString &t
 		return result;
 	}
 
-	const QUrl url(QUrl::fromUserInput(text));
+	const QUrl url(Utils::fromUserInput(text));
 
-	if (!QHostAddress(text).isNull() || (url.isValid() && (url.isLocalFile() || QRegularExpression(QLatin1String(R"(^(\w+\:\S+)|([\w\-]+\.[a-zA-Z]{2,}(/\S*)?$))")).match(text).hasMatch())))
+	if (!QHostAddress(text).isNull() || (url.isValid() && (url.isLocalFile() || QRegularExpression(QLatin1String(R"(^\w+\:\S+)")).match(text).hasMatch() || Utils::isUrl(text))))
 	{
 		result.url = url;
 		result.type = InterpreterResult::UrlType;
@@ -137,7 +137,7 @@ InputInterpreter::InterpreterResult InputInterpreter::interpret(const QString &t
 			{
 				if (information.error() == QHostInfo::NoError)
 				{
-					result.url = QUrl::fromUserInput(text);
+					result.url = Utils::fromUserInput(text);
 					result.type = InterpreterResult::UrlType;
 				}
 

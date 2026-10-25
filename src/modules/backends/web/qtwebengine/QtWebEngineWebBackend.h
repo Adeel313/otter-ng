@@ -24,8 +24,12 @@
 #include "../../../../core/WebBackend.h"
 
 #include <QtWebEngineCore/QWebEngineNotification>
-#include <QtWebEngineWidgets/QWebEngineDownloadItem>
+#include "QtWebEngineTransfer.h"
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineProfile>
+#else
+#include <QtWebEngineCore/QWebEngineProfile>
+#endif
 
 #include <memory>
 
@@ -59,10 +63,11 @@ protected:
 	static void showNotification(std::unique_ptr<QWebEngineNotification> nativeNotification);
 
 protected slots:
-	void handleDownloadRequested(QWebEngineDownloadItem *item);
+	void handleDownloadRequested(QtWebEngineDownload *item);
 	void handleOptionChanged(int identifier);
 
 private:
+	QWebEngineProfile *m_defaultProfile;
 	bool m_isInitialized;
 
 	static QString m_engineVersion;

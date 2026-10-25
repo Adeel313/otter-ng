@@ -181,7 +181,7 @@ void WebWidget::startReloadTimer()
 	}
 }
 
-void WebWidget::startTransfer(Transfer *transfer)
+void WebWidget::startTransfer(Transfer *transfer, bool lockEventLoop)
 {
 	if (transfer->getState() == Transfer::CancelledState)
 	{
@@ -206,7 +206,7 @@ void WebWidget::startTransfer(Transfer *transfer)
 
 				connect(transferDialog, &TransferDialog::finished, dialog, &ContentsDialog::close);
 
-				showDialog(dialog, false);
+				showDialog(dialog, lockEventLoop);
 			}
 
 			break;
@@ -221,11 +221,11 @@ void WebWidget::startTransfer(Transfer *transfer)
 
 			if (transfer->getState() == Transfer::CancelledState)
 			{
-				TransfersManager::addTransfer(transfer);
+				transfer->deleteLater();
 			}
 			else
 			{
-				transfer->deleteLater();
+				TransfersManager::addTransfer(transfer);
 			}
 
 			break;

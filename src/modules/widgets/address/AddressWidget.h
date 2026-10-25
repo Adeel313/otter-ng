@@ -28,6 +28,7 @@
 
 #include <QtCore/QPointer>
 #include <QtCore/QUrl>
+#include <QtGui/QIcon>
 #include <QtWidgets/QStyledItemDelegate>
 
 namespace Otter
@@ -35,6 +36,7 @@ namespace Otter
 
 class AddressCompletionModel;
 class ItemViewWidget;
+class SearchSuggester;
 class Window;
 
 class AddressDelegate final : public QStyledItemDelegate
@@ -151,6 +153,7 @@ protected:
 
 protected slots:
 	void handleOptionChanged(int identifier, const QVariant &value);
+	void handleWindowOptionChanged(int identifier, const QVariant &value);
 	void handleActionsStateChanged(const QVector<int> &identifiers);
 	void handleIconChanged();
 	void handleWatchedDataChanged(WebWidget::ChangeWatcher watcher);
@@ -159,10 +162,15 @@ protected slots:
 	void updateGeometries();
 	void updateCompletion(bool isTypedHistory, bool force = false);
 	void setCompletion(const QString &filter);
+	void updateSearchSuggestions(const QString &query);
 
 private:
 	QPointer<Window> m_window;
 	AddressCompletionModel *m_completionModel;
+	SearchSuggester *m_suggester;
+	QString m_searchSuggestionEngine;
+	QString m_searchSuggestionKeyword;
+	QIcon m_searchSuggestionIcon;
 	QPoint m_dragStartPosition;
 	QVector<EntryIdentifier> m_layout;
 	QHash<EntryIdentifier, EntryDefinition> m_entries;

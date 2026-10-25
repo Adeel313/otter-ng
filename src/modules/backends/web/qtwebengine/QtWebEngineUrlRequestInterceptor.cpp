@@ -26,6 +26,7 @@
 #include "../../../../core/WebBackend.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QMutexLocker>
 
 namespace Otter
 {
@@ -42,16 +43,43 @@ QtWebEngineUrlRequestInterceptor::QtWebEngineUrlRequestInterceptor(QtWebEngineWe
 {
 }
 
+void QtWebEngineUrlRequestInterceptor::setImageReloadUrl(const QUrl &url)
+{
+	QMutexLocker locker(&m_imageReloadMutex);
+
+	m_imageReloadUrl = url;
+}
+
+void QtWebEngineUrlRequestInterceptor::clearImageReloadUrl()
+{
+	QMutexLocker locker(&m_imageReloadMutex);
+
+	m_imageReloadUrl.clear();
+}
+
 void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo &request)
 {
-	if (m_isWorkingOffline || (!m_areImagesEnabled && request.resourceType() == QWebEngineUrlRequestInfo::ResourceTypeImage))
+	const bool isImageRequest(request.resourceType() == QWebEngineUrlRequestInfo::ResourceTypeImage);
+	bool isImageReloadRequest(false);
+
+	if (isImageRequest)
+	{
+		QMutexLocker locker(&m_imageReloadMutex);
+
+		if (m_imageReloadUrl.isValid())
+		{
+			isImageReloadRequest = (request.requestUrl().adjusted(QUrl::RemoveFragment) == m_imageReloadUrl.adjusted(QUrl::RemoveFragment));
+		}
+	}
+
+	if (m_isWorkingOffline || (!m_areImagesEnabled && isImageRequest && !isImageReloadRequest))
 	{
 		request.block(true);
 
 		return;
 	}
 
-	if (!m_contentBlockingProfiles.isEmpty() && (m_unblockedHosts.isEmpty() || !m_unblockedHosts.contains(Utils::extractHost(request.firstPartyUrl()))))
+	if (!isImageReloadRequest && !m_contentBlockingProfiles.isEmpty() && (m_unblockedHosts.isEmpty() || !m_unblockedHosts.contains(Utils::extractHost(request.firstPartyUrl()))))
 	{
 		NetworkManager::ResourceType resourceType(NetworkManager::OtherType);
 		bool storeBlockedUrl(true);

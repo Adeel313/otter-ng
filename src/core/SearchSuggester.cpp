@@ -58,9 +58,11 @@ void SearchSuggester::setQuery(const QString &query)
 
 	if (m_networkReply)
 	{
-		m_networkReply->abort();
-		m_networkReply->deleteLater();
+		QNetworkReply *reply(m_networkReply);
 		m_networkReply = nullptr;
+
+		reply->abort();
+		reply->deleteLater();
 	}
 
 	const SearchEnginesManager::SearchEngineDefinition searchEngine(SearchEnginesManager::getSearchEngine(m_searchEngine));
@@ -82,10 +84,14 @@ void SearchSuggester::setQuery(const QString &query)
 		m_networkReply = NetworkManagerFactory::getNetworkManager()->get(searchQuery.request);
 	}
 
-	connect(m_networkReply, &QNetworkReply::finished, this, [&]()
+	QNetworkReply *reply(m_networkReply);
+
+	connect(reply, &QNetworkReply::finished, this, [this, reply]()
 	{
-		if (!m_networkReply)
+		if (m_networkReply != reply)
 		{
+			reply->deleteLater();
+
 			return;
 		}
 
@@ -94,16 +100,16 @@ void SearchSuggester::setQuery(const QString &query)
 			m_model->clear();
 		}
 
-		m_networkReply->deleteLater();
+		reply->deleteLater();
 
-		if (m_networkReply->size() <= 0)
+		if (reply->size() <= 0)
 		{
 			m_networkReply = nullptr;
 
 			return;
 		}
 
-		const QJsonDocument document(QJsonDocument::fromJson(m_networkReply->readAll()));
+		const QJsonDocument document(QJsonDocument::fromJson(reply->readAll()));
 
 		m_networkReply = nullptr;
 

@@ -6,13 +6,18 @@
 	"separator",
 	{
 		"identifier": "chrome",
-		"name": "Google Chrome 151 (Windows)",
-		"value": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+		"name": "Google Chrome 155 (Windows)",
+		"value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+	},
+	{
+		"identifier": "chromium",
+		"name": "Chromium (Linux)",
+		"value": "Mozilla/5.0 (X11; Linux x86_64) {engineVersion} Safari/537.36"
 	},
 	{
 		"identifier": "chromeMobile",
-		"name": "Google Chrome 151 (Android)",
-		"value": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+		"name": "Google Chrome 155 (Android)",
+		"value": "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
 	},
 	{
 		"identifier": "firefox",

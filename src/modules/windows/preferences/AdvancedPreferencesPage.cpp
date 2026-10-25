@@ -21,6 +21,7 @@
 
 #include "AdvancedPreferencesPage.h"
 #include "../../../core/Application.h"
+#include "../../../core/ActionsManager.h"
 #include "../../../core/GesturesManager.h"
 #include "../../../core/HandlersManager.h"
 #include "../../../core/IniSettings.h"
@@ -37,6 +38,7 @@
 
 #include "ui_AdvancedPreferencesPage.h"
 
+#include <QtCore/QDebug>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QMimeDatabase>
@@ -95,6 +97,9 @@ void AdvancedPreferencesPage::changeEvent(QEvent *event)
 				m_ui->enableFullScreenComboBox->setItemText(0, tr("Ask"));
 				m_ui->enableFullScreenComboBox->setItemText(1, tr("Always"));
 				m_ui->enableFullScreenComboBox->setItemText(2, tr("Never"));
+				m_ui->historyExpandGroupsComboBox->setItemText(0, tr("First group"));
+				m_ui->historyExpandGroupsComboBox->setItemText(1, tr("All groups"));
+				m_ui->historyExpandGroupsComboBox->setItemText(2, tr("None"));
 
 				int index(-1);
 
@@ -996,8 +1001,9 @@ void AdvancedPreferencesPage::load()
 		navigationModel->appendRow(item);
 	}
 
-	navigationModel->item(7, 0)->setEnabled(false);
 	navigationModel->item(11, 0)->setEnabled(false);
+
+	qDebug() << "OTTER-HIST nav item(7=History) enabled:" << navigationModel->item(7, 0)->isEnabled();
 
 	m_ui->advancedViewWidget->setModel(navigationModel);
 	m_ui->advancedViewWidget->selectionModel()->select(navigationModel->index(0, 0), QItemSelectionModel::Select);
@@ -1107,6 +1113,27 @@ void AdvancedPreferencesPage::load()
 	const int enableFullScreenIndex(m_ui->enableFullScreenComboBox->findData(SettingsManager::getOption(SettingsManager::Permissions_EnableFullScreenOption).toString()));
 
 	m_ui->enableFullScreenComboBox->setCurrentIndex((enableFullScreenIndex < 0) ? 0 : enableFullScreenIndex);
+
+	m_ui->historyPeriodSpinBox->setValue(SettingsManager::getOption(SettingsManager::History_BrowsingLimitPeriodOption).toInt());
+	m_ui->historyAmountSpinBox->setValue(SettingsManager::getOption(SettingsManager::History_BrowsingLimitAmountGlobalOption).toInt());
+	m_ui->historyStoreFaviconsCheckBox->setChecked(SettingsManager::getOption(SettingsManager::History_StoreFaviconsOption).toBool());
+	m_ui->historyExpandGroupsComboBox->addItem(tr("First group"), QLatin1String("first"));
+	m_ui->historyExpandGroupsComboBox->addItem(tr("All groups"), QLatin1String("all"));
+	m_ui->historyExpandGroupsComboBox->addItem(tr("None"), QLatin1String("none"));
+
+	const int historyExpandGroupsIndex(m_ui->historyExpandGroupsComboBox->findData(SettingsManager::getOption(SettingsManager::History_ExpandBranchesOption).toString()));
+
+	m_ui->historyExpandGroupsComboBox->setCurrentIndex((historyExpandGroupsIndex < 0) ? 0 : historyExpandGroupsIndex);
+	m_ui->historyRememberClosedPrivateTabsCheckBox->setChecked(SettingsManager::getOption(SettingsManager::History_RememberClosedPrivateTabsOption).toBool());
+	m_ui->historyClosedTabsSpinBox->setValue(SettingsManager::getOption(SettingsManager::History_ClosedTabsLimitAmountOption).toInt());
+	m_ui->historyClosedWindowsSpinBox->setValue(SettingsManager::getOption(SettingsManager::History_ClosedWindowsLimitAmountOption).toInt());
+	m_ui->historyDownloadsPeriodSpinBox->setValue(SettingsManager::getOption(SettingsManager::History_DownloadsLimitPeriodOption).toInt());
+
+	qDebug() << "OTTER-HIST loaded" << "period:" << m_ui->historyPeriodSpinBox->value() << "amount:" << m_ui->historyAmountSpinBox->value() << "favicons:" << m_ui->historyStoreFaviconsCheckBox->isChecked() << "expand:" << m_ui->historyExpandGroupsComboBox->currentData() << "privateTabs:" << m_ui->historyRememberClosedPrivateTabsCheckBox->isChecked() << "closedTabs:" << m_ui->historyClosedTabsSpinBox->value() << "closedWindows:" << m_ui->historyClosedWindowsSpinBox->value() << "downloadsPeriod:" << m_ui->historyDownloadsPeriodSpinBox->value();
+
+	connect(m_ui->historyPeriodSpinBox, qOverload<int>(&QSpinBox::valueChanged), this, [](int value) { qDebug() << "OTTER-HIST spin period ->" << value; });
+	connect(m_ui->historyAmountSpinBox, qOverload<int>(&QSpinBox::valueChanged), this, [](int value) { qDebug() << "OTTER-HIST spin amount ->" << value; });
+	connect(m_ui->historyClosedTabsSpinBox, qOverload<int>(&QSpinBox::valueChanged), this, [](int value) { qDebug() << "OTTER-HIST spin closedTabs ->" << value; });
 
 	m_ui->sendReferrerCheckBox->setChecked(SettingsManager::getOption(SettingsManager::Network_EnableReferrerOption).toBool());
 
@@ -1262,6 +1289,7 @@ void AdvancedPreferencesPage::load()
 
 		if (index.isValid() && index.data(Qt::UserRole).type() == QVariant::Int)
 		{
+			qDebug() << "OTTER-HIST switch to stack index" << index.data(Qt::UserRole).toInt();
 			m_ui->advancedStackedWidget->setCurrentIndex(index.data(Qt::UserRole).toInt());
 		}
 	});
@@ -1280,6 +1308,14 @@ void AdvancedPreferencesPage::load()
 	connect(m_ui->mimeTypesFilePathWidget, &Otter::FilePathWidget::pathChanged, this, &AdvancedPreferencesPage::updateDownloadsOptions);
 	connect(m_ui->mimeTypesApplicationComboBoxWidget, &Otter::ApplicationComboBoxWidget::currentCommandChanged, this, &AdvancedPreferencesPage::updateDownloadsOptions);
 	connect(m_ui->enableJavaScriptCheckBox, &QCheckBox::toggled, m_ui->javaScriptWidget, &QWidget::setEnabled);
+	connect(m_ui->historyClearDataButton, &QPushButton::clicked, this, [&]()
+	{
+		Application::triggerAction(ActionsManager::ClearHistoryAction, {}, this);
+	});
+	connect(m_ui->historyOpenHistoryButton, &QPushButton::clicked, this, [&]()
+	{
+		Application::triggerAction(ActionsManager::HistoryAction, {}, this);
+	});
 	connect(m_ui->userAgentsViewWidget, &ItemViewWidget::needsActionsUpdate, this, &AdvancedPreferencesPage::updateUserAgentsActions);
 	connect(m_ui->userAgentsAddButton->menu(), &QMenu::triggered, this, &AdvancedPreferencesPage::addUserAgent);
 	connect(m_ui->userAgentsEditButton, &QPushButton::clicked, this, &AdvancedPreferencesPage::editUserAgent);
@@ -1436,6 +1472,16 @@ void AdvancedPreferencesPage::save()
 	SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanReceiveRightClicksOption, m_ui->scriptsCanReceiveRightClicksCheckBox->isChecked());
 	SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanCloseWindowsOption, m_ui->scriptsCanCloseWindowsComboBox->currentData().toString());
 	SettingsManager::setOption(SettingsManager::Permissions_EnableFullScreenOption, m_ui->enableFullScreenComboBox->currentData().toString());
+	SettingsManager::setOption(SettingsManager::History_BrowsingLimitPeriodOption, m_ui->historyPeriodSpinBox->value());
+	SettingsManager::setOption(SettingsManager::History_BrowsingLimitAmountGlobalOption, m_ui->historyAmountSpinBox->value());
+	SettingsManager::setOption(SettingsManager::History_StoreFaviconsOption, m_ui->historyStoreFaviconsCheckBox->isChecked());
+	SettingsManager::setOption(SettingsManager::History_ExpandBranchesOption, m_ui->historyExpandGroupsComboBox->currentData().toString());
+	SettingsManager::setOption(SettingsManager::History_RememberClosedPrivateTabsOption, m_ui->historyRememberClosedPrivateTabsCheckBox->isChecked());
+	SettingsManager::setOption(SettingsManager::History_ClosedTabsLimitAmountOption, m_ui->historyClosedTabsSpinBox->value());
+	SettingsManager::setOption(SettingsManager::History_ClosedWindowsLimitAmountOption, m_ui->historyClosedWindowsSpinBox->value());
+	SettingsManager::setOption(SettingsManager::History_DownloadsLimitPeriodOption, m_ui->historyDownloadsPeriodSpinBox->value());
+
+	qDebug() << "OTTER-HIST saved period:" << m_ui->historyPeriodSpinBox->value() << "amount:" << m_ui->historyAmountSpinBox->value() << "closedTabs:" << m_ui->historyClosedTabsSpinBox->value();
 
 	SettingsManager::setOption(SettingsManager::Network_EnableReferrerOption, m_ui->sendReferrerCheckBox->isChecked());
 	SettingsManager::setOption(SettingsManager::Network_UserAgentOption, m_ui->userAgentsViewWidget->getCheckedIndex().data(UserAgentsModel::IdentifierRole).toString());

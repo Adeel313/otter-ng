@@ -678,7 +678,326 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="historyPage"/>
+     <widget class="QWidget" name="historyPage">
+      <layout class="QVBoxLayout" name="historyPageLayout">
+       <item>
+        <widget class="QLabel" name="historyHeader">
+         <property name="font">
+          <font>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Browsing History</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyPeriodLayout">
+         <item>
+          <widget class="QLabel" name="historyPeriodLabel">
+           <property name="text">
+            <string>Keep history for the last</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="historyPeriodSpinBox">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>3650</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyPeriodDaysLabel">
+           <property name="text">
+            <string>day(s)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyPeriodSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyAmountLayout">
+         <item>
+          <widget class="QLabel" name="historyAmountLabel">
+           <property name="text">
+            <string>Store at most</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="historyAmountSpinBox">
+           <property name="minimum">
+            <number>10</number>
+           </property>
+           <property name="maximum">
+            <number>1000000</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyAmountEntriesLabel">
+           <property name="text">
+            <string>entries</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyAmountSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="historyStoreFaviconsCheckBox">
+         <property name="text">
+          <string>Store icons of visited pages in history</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyExpandLayout">
+         <item>
+          <widget class="QLabel" name="historyExpandLabel">
+           <property name="text">
+            <string>Expand groups on the history page</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="historyExpandGroupsComboBox"/>
+         </item>
+         <item>
+          <spacer name="historyExpandSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="historyClosedHeader">
+         <property name="font">
+          <font>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Recently Closed</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="historyRememberClosedPrivateTabsCheckBox">
+         <property name="text">
+          <string>Remember closed tabs of private windows</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyClosedTabsLayout">
+         <item>
+          <widget class="QLabel" name="historyClosedTabsLabel">
+           <property name="text">
+            <string>Keep at most</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="historyClosedTabsSpinBox">
+           <property name="minimum">
+            <number>0</number>
+           </property>
+           <property name="maximum">
+            <number>1000</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyClosedTabsEntriesLabel">
+           <property name="text">
+            <string>closed tabs</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyClosedTabsSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyClosedWindowsLayout">
+         <item>
+          <widget class="QLabel" name="historyClosedWindowsLabel">
+           <property name="text">
+            <string>Keep at most</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="historyClosedWindowsSpinBox">
+           <property name="minimum">
+            <number>0</number>
+           </property>
+           <property name="maximum">
+            <number>1000</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyClosedWindowsEntriesLabel">
+           <property name="text">
+            <string>closed windows</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyClosedWindowsSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="historyDownloadsHeader">
+         <property name="font">
+          <font>
+           <weight>75</weight>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>Downloads History</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyDownloadsLayout">
+         <item>
+          <widget class="QLabel" name="historyDownloadsPeriodLabel">
+           <property name="text">
+            <string>Keep downloads history for the last</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QSpinBox" name="historyDownloadsPeriodSpinBox">
+           <property name="minimum">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <number>3650</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyDownloadsPeriodDaysLabel">
+           <property name="text">
+            <string>day(s)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyDownloadsPeriodSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="historyButtonsLayout">
+         <item>
+          <widget class="QPushButton" name="historyClearDataButton">
+           <property name="text">
+            <string>Clear browsing data…</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="historyOpenHistoryButton">
+           <property name="text">
+            <string>Open History Page</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="historyButtonsSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
      <widget class="QWidget" name="networkPage">
       <layout class="QVBoxLayout" name="networkPagePageLayout" stretch="0,0,0,1,0,1,0">
        <item>

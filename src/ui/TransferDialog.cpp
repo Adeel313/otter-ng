@@ -145,7 +145,21 @@ void TransferDialog::handleButtonClicked(QAbstractButton *button)
 					return;
 				}
 
+				if (m_transfer.isNull())
+				{
+					reject();
+
+					return;
+				}
+
 				m_transfer->setTarget(path, true);
+
+				if (m_transfer.isNull())
+				{
+					reject();
+
+					return;
+				}
 
 				if (m_ui->rememberChoiceCheckBox->isChecked())
 				{

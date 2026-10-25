@@ -27,6 +27,7 @@
 #include "../../../core/FeedsManager.h"
 #include "../../../core/InputInterpreter.h"
 #include "../../../core/HistoryManager.h"
+#include "../../../core/SearchSuggester.h"
 #include "../../../core/SearchEnginesManager.h"
 #include "../../../core/ThemesManager.h"
 #include "../../../core/Utils.h"
@@ -70,9 +71,7 @@ void AddressDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
 	if (static_cast<AddressCompletionModel::CompletionEntry::EntryType>(index.data(AddressCompletionModel::TypeRole).toInt()) == AddressCompletionModel::CompletionEntry::HeaderType)
 	{
-		QStyleOptionViewItem headerOption(option);
-		headerOption.rect = textRectangle.marginsRemoved(QMargins(0, 2, (isRightToLeft ? 3 : 0), 2));
-		headerOption.text = index.data(AddressCompletionModel::TitleRole).toString();
+		textRectangle = textRectangle.marginsRemoved(QMargins(5, 2, 5, 2));
 
 		if (index.row() > 0)
 		{
@@ -86,7 +85,11 @@ void AddressDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 			painter->restore();
 		}
 
-		QStyledItemDelegate::paint(painter, headerOption, index);
+		painter->save();
+		painter->setFont(option.font);
+		painter->setPen(option.palette.color(QPalette::Disabled, QPalette::Text));
+		painter->drawText(textRectangle, (isRightToLeft ? Qt::AlignRight : Qt::AlignLeft) | Qt::AlignVCenter, index.data(AddressCompletionModel::TitleRole).toString());
+		painter->restore();
 
 		return;
 	}
@@ -280,6 +283,7 @@ QSize AddressDelegate::sizeHint(const QStyleOptionViewItem &option, const QModel
 AddressWidget::AddressWidget(Window *window, QWidget *parent) : LineEditWidget(parent),
 	m_window(nullptr),
 	m_completionModel(new AddressCompletionModel(this)),
+	m_suggester(nullptr),
 	m_clickedEntry(UnknownEntry),
 	m_hoveredEntry(UnknownEntry),
 	m_completionModes(NoCompletionMode),
@@ -304,6 +308,7 @@ AddressWidget::AddressWidget(Window *window, QWidget *parent) : LineEditWidget(p
 	handleOptionChanged(SettingsManager::AddressField_DropActionOption, SettingsManager::getOption(SettingsManager::AddressField_DropActionOption));
 	handleOptionChanged(SettingsManager::AddressField_LayoutOption, SettingsManager::getOption(SettingsManager::AddressField_LayoutOption));
 	handleOptionChanged(SettingsManager::AddressField_SelectAllOnFocusOption, SettingsManager::getOption(SettingsManager::AddressField_SelectAllOnFocusOption));
+	handleOptionChanged(SettingsManager::Search_SearchEnginesSuggestionsModeOption, SettingsManager::getOption(SettingsManager::Search_SearchEnginesSuggestionsModeOption));
 
 	if (toolBar)
 	{
@@ -330,6 +335,7 @@ AddressWidget::AddressWidget(Window *window, QWidget *parent) : LineEditWidget(p
 	{
 		m_wasEdited = true;
 	});
+	connect(this, &AddressWidget::textEdited, this, &AddressWidget::updateSearchSuggestions);
 	connect(this, &AddressWidget::textDropped, this, [&](const QString &text)
 	{
 		handleUserInput(text);
@@ -433,7 +439,7 @@ void AddressWidget::keyPressEvent(QKeyEvent *event)
 		case Qt::Key_Down:
 			if (!isPopupVisible() && HistoryManager::getTypedHistoryModel()->rowCount() > 0)
 			{
-				showCompletion(true);
+				showCompletion(false);
 			}
 
 			break;
@@ -696,9 +702,9 @@ void AddressWidget::mouseReleaseEvent(QMouseEvent *event)
 
 				return;
 			case HistoryDropdownEntry:
-				if (!isPopupVisible() && HistoryManager::getTypedHistoryModel()->rowCount() > 0)
+				if (!isPopupVisible() && (HistoryManager::getBrowsingHistoryModel()->rowCount() > 0 || HistoryManager::getTypedHistoryModel()->rowCount() > 0))
 				{
-					showCompletion(true);
+					showCompletion(false);
 				}
 
 				break;
@@ -709,7 +715,7 @@ void AddressWidget::mouseReleaseEvent(QMouseEvent *event)
 
 	if (event->button() == Qt::LeftButton && !isPopupVisible() && SettingsManager::getOption(SettingsManager::AddressField_ShowSuggestionsOnFocusOption).toBool() && HistoryManager::getTypedHistoryModel()->rowCount() > 0)
 	{
-		showCompletion(true);
+		showCompletion(false);
 	}
 	else if (event->button() == Qt::MiddleButton && text().isEmpty() && !QGuiApplication::clipboard()->text().isEmpty() && SettingsManager::getOption(SettingsManager::AddressField_PasteAndGoOnMiddleClickOption).toBool())
 	{
@@ -867,6 +873,45 @@ void AddressWidget::handleOptionChanged(int identifier, const QVariant &value)
 			setSelectAllOnFocus(value.toBool());
 
 			break;
+		case SettingsManager::Search_SearchEnginesSuggestionsModeOption:
+			if (value.toString() == QLatin1String("disabled"))
+			{
+				if (m_suggester)
+				{
+					m_suggester->setQuery({});
+					m_suggester->deleteLater();
+					m_suggester = nullptr;
+				}
+
+				m_searchSuggestionEngine.clear();
+				m_searchSuggestionKeyword.clear();
+				m_searchSuggestionIcon = {};
+				m_completionModel->setSearchSuggestions({}, {}, {});
+			}
+			else if (!m_suggester && !m_isSimplified)
+			{
+				m_suggester = new SearchSuggester({}, this);
+				connect(m_suggester, &SearchSuggester::suggestionsChanged, this, [this](const QVector<SearchSuggester::SearchSuggestion> &suggestions)
+				{
+					QStringList completions;
+					completions.reserve(suggestions.count());
+
+					for (const SearchSuggester::SearchSuggestion &suggestion: suggestions)
+					{
+						completions.append(suggestion.completion);
+					}
+
+					m_completionModel->setSearchSuggestions(completions, m_searchSuggestionKeyword, m_searchSuggestionIcon);
+				});
+
+				updateSearchSuggestions(text());
+			}
+
+			break;
+		case SettingsManager::Search_DefaultSearchEngineOption:
+			updateSearchSuggestions(text());
+
+			break;
 		case SettingsManager::AddressField_LayoutOption:
 			if (m_isSimplified)
 			{
@@ -911,6 +956,78 @@ void AddressWidget::handleOptionChanged(int identifier, const QVariant &value)
 		default:
 			break;
 	}
+}
+
+void AddressWidget::handleWindowOptionChanged(int identifier, const QVariant &value)
+{
+	Q_UNUSED(value)
+
+	if (identifier == SettingsManager::Search_DefaultSearchEngineOption)
+	{
+		updateSearchSuggestions(text());
+	}
+}
+
+void AddressWidget::updateSearchSuggestions(const QString &query)
+{
+	if (!m_suggester)
+	{
+		return;
+	}
+
+	const QString suggestionsMode(SettingsManager::getOption(SettingsManager::Search_SearchEnginesSuggestionsModeOption).toString());
+	MainWindow *mainWindow(m_window ? MainWindow::findMainWindow(m_window) : MainWindow::findMainWindow(this));
+	const bool isPrivate(SessionsManager::isPrivate() || (mainWindow && mainWindow->isPrivate()) || (m_window && m_window->isPrivate()));
+
+	if (query.trimmed().isEmpty() || (suggestionsMode == QLatin1String("nonPrivateTabsOnly") && isPrivate))
+	{
+		m_suggester->setQuery({});
+		m_completionModel->setSearchSuggestions({}, {}, {});
+
+		return;
+	}
+
+	const QString keyword(query.section(QLatin1Char(' '), 0, 0));
+	SearchEnginesManager::SearchEngineDefinition searchEngine(SearchEnginesManager::getSearchEngine(keyword, true));
+	QString searchQuery(query);
+	const bool isExplicitSearch(searchEngine.isValid() || keyword == QLatin1String("?"));
+
+	if (searchEngine.isValid())
+	{
+		searchQuery = query.section(QLatin1Char(' '), 1, -1);
+	}
+	else
+	{
+		const QString defaultSearchEngine(m_window ? m_window->getOption(SettingsManager::Search_DefaultSearchEngineOption).toString() : SettingsManager::getOption(SettingsManager::Search_DefaultSearchEngineOption).toString());
+		searchEngine = SearchEnginesManager::getSearchEngine(defaultSearchEngine);
+
+		if (keyword == QLatin1String("?"))
+		{
+			searchQuery = query.section(QLatin1Char(' '), 1, -1);
+		}
+	}
+
+	const InputInterpreter::InterpreterResult result(InputInterpreter::interpret(query));
+
+	if (!searchEngine.isValid() || searchQuery.trimmed().isEmpty() || (!isExplicitSearch && (result.type == InputInterpreter::InterpreterResult::UrlType || result.type == InputInterpreter::InterpreterResult::BookmarkType)))
+	{
+		m_suggester->setQuery({});
+		m_completionModel->setSearchSuggestions({}, {}, {});
+
+		return;
+	}
+
+	if (m_searchSuggestionEngine != searchEngine.identifier)
+	{
+		m_suggester->setQuery({});
+		m_searchSuggestionEngine = searchEngine.identifier;
+		m_suggester->setSearchEngine(m_searchSuggestionEngine);
+	}
+
+	m_searchSuggestionKeyword = searchEngine.keyword;
+	m_searchSuggestionIcon = searchEngine.icon;
+	m_completionModel->setSearchSuggestions({}, m_searchSuggestionKeyword, m_searchSuggestionIcon);
+	m_suggester->setQuery(searchQuery);
 }
 
 void AddressWidget::handleActionsStateChanged(const QVector<int> &identifiers)
@@ -1333,6 +1450,8 @@ void AddressWidget::updateCompletion(bool isTypedHistory, bool force)
 
 void AddressWidget::setCompletion(const QString &filter)
 {
+	updateCompletion(false);
+
 	if (filter.isEmpty() || m_completionModel->rowCount() == 0)
 	{
 		hidePopup();
@@ -1375,6 +1494,7 @@ void AddressWidget::setWindow(Window *window)
 		disconnect(m_window.data(), &Window::arbitraryActionsStateChanged, this, &AddressWidget::handleActionsStateChanged);
 		disconnect(m_window.data(), &Window::contentStateChanged, this, &AddressWidget::updateCurrentEntries);
 		disconnect(m_window.data(), &Window::loadingStateChanged, this, &AddressWidget::updateCurrentEntries);
+		disconnect(m_window.data(), &Window::optionChanged, this, &AddressWidget::handleWindowOptionChanged);
 		disconnect(m_window->getMainWindow(), &MainWindow::activeWindowChanged, this, &AddressWidget::hidePopup);
 
 		if (m_window->getWebWidget())
@@ -1410,6 +1530,7 @@ void AddressWidget::setWindow(Window *window)
 		connect(window, &Window::arbitraryActionsStateChanged, this, &AddressWidget::handleActionsStateChanged);
 		connect(window, &Window::contentStateChanged, this, &AddressWidget::updateCurrentEntries);
 		connect(window, &Window::loadingStateChanged, this, &AddressWidget::updateCurrentEntries);
+		connect(window, &Window::optionChanged, this, &AddressWidget::handleWindowOptionChanged);
 		connect(window->getMainWindow(), &MainWindow::activeWindowChanged, this, &AddressWidget::hidePopup);
 		connect(window, &Window::destroyed, this, [&](QObject *object)
 		{
@@ -1445,6 +1566,7 @@ void AddressWidget::setWindow(Window *window)
 
 	updateEntries({FaviconEntry});
 	setUrl(window ? window->getUrl() : QUrl());
+	updateSearchSuggestions(text());
 }
 
 void AddressWidget::setUrl(const QUrl &url, bool force)

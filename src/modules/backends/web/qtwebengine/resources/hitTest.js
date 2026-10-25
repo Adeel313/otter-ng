@@ -64,7 +64,7 @@ function createHitTest(window, element, result)
 	if (result.tagName == 'img')
 	{
 		result.alternateText = element.alt;
-		result.imageUrl = normalizeUrl(element.src);
+		result.imageUrl = normalizeUrl(element.currentSrc || element.src);
 		result.longDescription = element.longDesc;
 	}
 	else if (result.tagName == 'audio' || result.tagName == 'video')

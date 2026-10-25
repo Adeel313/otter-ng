@@ -25,37 +25,70 @@
 #include "../../../../core/ContentFiltersManager.h"
 #include "../../../../core/HandlersManager.h"
 #include "../../../../core/HistoryManager.h"
+#include "../../../../core/SettingsManager.h"
 #include "../../../../core/ThemesManager.h"
 #include "../../../../core/UserScript.h"
 #include "../../../../core/Utils.h"
 #include "../../../../ui/ContentsDialog.h"
 #include "../../../../ui/LineEditWidget.h"
 
+#include <QtCore/QDebug>
 #include <QtCore/QFile>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QUuid>
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineHistory>
 #include <QtWebEngineWidgets/QWebEngineProfile>
 #include <QtWebEngineWidgets/QWebEngineScript>
 #include <QtWebEngineWidgets/QWebEngineScriptCollection>
 #include <QtWebEngineWidgets/QWebEngineSettings>
+#else
+#include <QtWebEngineCore/QWebEngineHistory>
+#include <QtWebEngineCore/QWebEngineProfile>
+#include <QtWebEngineCore/QWebEngineScript>
+#include <QtWebEngineCore/QWebEngineScriptCollection>
+#include <QtWebEngineCore/QWebEngineSettings>
+#endif
 #include <QtWidgets/QMessageBox>
 
 namespace Otter
 {
 
-QtWebEnginePage::QtWebEnginePage(bool isPrivate, QtWebEngineWebWidget *parent) : QWebEnginePage((isPrivate ? new QWebEngineProfile(parent) : qobject_cast<QtWebEngineWebBackend*>(parent->getBackend())->getDefaultProfile()), parent),
-	m_widget(parent),
-	m_previousNavigationType(QtWebEnginePage::NavigationTypeOther),
-	m_isIgnoringJavaScriptPopups(false),
-	m_isViewingMedia(false),
-	m_isPopup(false)
+QtWebEnginePage::QtWebEnginePage(bool isPrivate, QtWebEngineWebWidget *parent) : QtWebEnginePage((isPrivate ? new QWebEngineProfile(parent) : qobject_cast<QtWebEngineWebBackend*>(parent->getBackend())->getDefaultProfile()), parent)
 {
 	if (isPrivate && m_widget)
 	{
 		connect(profile(), &QWebEngineProfile::downloadRequested, qobject_cast<QtWebEngineWebBackend*>(m_widget->getBackend()), &QtWebEngineWebBackend::handleDownloadRequested);
 	}
+}
 
+QtWebEnginePage::QtWebEnginePage(QWebEngineProfile *profile, QtWebEngineWebWidget *parent) : QWebEnginePage(profile, parent),
+	m_widget(parent),
+	m_previousNavigationType(QtWebEnginePage::NavigationTypeOther),
+	m_editingStateMessageToken(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+	m_passwordMessageToken(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+	m_isIgnoringJavaScriptPopups(false),
+	m_isViewingMedia(false),
+	m_isPopup(false)
+{
 	connect(this, &QtWebEnginePage::loadFinished, this, &QtWebEnginePage::handleLoadFinished);
+
+#if !defined(USE_QT5)
+	connect(this, &QWebEnginePage::certificateError, this, [this](QWebEngineCertificateError error)
+	{
+		if (shouldAcceptCertificate(error))
+		{
+			error.acceptCertificate();
+		}
+		else
+		{
+			error.rejectCertificate();
+		}
+	});
+#endif
 }
 
 void QtWebEnginePage::markAsPopup()
@@ -94,6 +127,81 @@ void QtWebEnginePage::javaScriptAlert(const QUrl &url, const QString &message)
 
 void QtWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &note, int line, const QString &source)
 {
+	const QString editingStateMessagePrefix(QLatin1String("otter-editing:") + m_editingStateMessageToken + QLatin1Char(':'));
+
+	if (note.startsWith(editingStateMessagePrefix))
+	{
+		if (m_widget)
+		{
+			m_widget->m_isEditing = (note.mid(editingStateMessagePrefix.length()) == QLatin1String("1"));
+		}
+
+		return;
+	}
+
+	const QString passwordMessagePrefix(QLatin1String("otter-save-password:") + m_passwordMessageToken + QLatin1Char(':'));
+
+	if (note.startsWith(passwordMessagePrefix))
+	{
+		if (!m_widget || m_widget->isPrivate() || !m_widget->getOption(SettingsManager::Browser_RememberPasswordsOption).toBool())
+		{
+			return;
+		}
+
+		QJsonParseError parseError;
+		const QJsonDocument document(QJsonDocument::fromJson(QByteArray::fromBase64(note.mid(passwordMessagePrefix.length()).toLatin1()), &parseError));
+
+		if (parseError.error != QJsonParseError::NoError || !document.isObject())
+		{
+			return;
+		}
+
+		const QJsonObject payload(document.object());
+		const QUrl passwordUrl(payload.value(QLatin1String("url")).toString());
+		const QString scheme(passwordUrl.scheme().toLower());
+
+		if (!passwordUrl.isValid() || passwordUrl.host().isEmpty() || (scheme != QLatin1String("http") && scheme != QLatin1String("https")))
+		{
+			return;
+		}
+
+		const QJsonArray fieldsArray(payload.value(QLatin1String("fields")).toArray());
+		PasswordsManager::Password password;
+		password.url = passwordUrl;
+		password.timeAdded = QDateTime::currentDateTimeUtc();
+		password.type = PasswordsManager::FormPassword;
+		bool hasPassword(false);
+
+		for (const QJsonValue &fieldValue: fieldsArray)
+		{
+			const QJsonObject fieldObject(fieldValue.toObject());
+			PasswordsManager::Password::Field field;
+			field.name = fieldObject.value(QLatin1String("name")).toString();
+			field.value = fieldObject.value(QLatin1String("value")).toString();
+			field.type = ((fieldObject.value(QLatin1String("type")).toString() == QLatin1String("password")) ? PasswordsManager::PasswordField : PasswordsManager::TextField);
+
+			if (field.name.isEmpty())
+			{
+				continue;
+			}
+
+			hasPassword = hasPassword || (field.type == PasswordsManager::PasswordField && !field.value.isEmpty());
+			password.fields.append(field);
+		}
+
+		if (hasPassword)
+		{
+			const PasswordsManager::PasswordMatch match(PasswordsManager::hasPassword(password));
+
+			if (match != PasswordsManager::FullMatch)
+			{
+				m_widget->notifySavePasswordRequested(password, (match == PasswordsManager::PartialMatch));
+			}
+		}
+
+		return;
+	}
+
 	Console::MessageLevel mappedLevel(Console::LogLevel);
 
 	if (level == WarningMessageLevel)
@@ -111,6 +219,50 @@ void QtWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel lev
 void QtWebEnginePage::handleLoadFinished()
 {
 	m_isIgnoringJavaScriptPopups = false;
+
+	runJavaScript(QStringLiteral(R"JS((function()
+	{
+		const updateEditingState = function()
+		{
+			const element = document.activeElement;
+			let isEditing = false;
+
+			if (element && !element.disabled && !element.readOnly)
+			{
+				if (element.isContentEditable || element.tagName.toLowerCase() === 'textarea')
+				{
+					isEditing = true;
+				}
+				else if (element.tagName.toLowerCase() === 'input')
+				{
+					isEditing = !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(element.type.toLowerCase());
+				}
+			}
+
+			console.info('otter-editing:%1:' + (isEditing ? '1' : '0'));
+		};
+
+		document.addEventListener('focusin', updateEditingState, true);
+		document.addEventListener('focusout', function()
+		{
+			setTimeout(updateEditingState, 0);
+		}, true);
+		updateEditingState();
+	})();)JS").arg(m_editingStateMessageToken));
+
+	if (m_widget && !m_widget->isPrivate() && m_widget->getOption(SettingsManager::Browser_RememberPasswordsOption).toBool())
+	{
+		QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/formExtractor.js"));
+
+		if (file.open(QIODevice::ReadOnly))
+		{
+			runJavaScript(QString::fromUtf8(file.readAll()).arg(m_passwordMessageToken));
+		}
+		else
+		{
+			qWarning() << "Failed to open password form extractor resource:" << file.errorString();
+		}
+	}
 
 	const int historyIndex(history()->currentItemIndex());
 	HistoryEntryInformation entry(m_history.value(historyIndex));
@@ -250,14 +402,16 @@ QtWebEngineWebWidget* QtWebEnginePage::getWebWidget() const
 
 QWebEnginePage* QtWebEnginePage::createWindow(WebWindowType type)
 {
-	if (type == WebDialog)
+	Q_UNUSED(type)
+
+	if (!m_widget)
 	{
-		return QWebEnginePage::createWindow(type);
+		return nullptr;
 	}
 
-	const QString popupsPolicy((m_widget ? m_widget->getOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption) : SettingsManager::getOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption)).toString());
+	const QString popupsPolicy(m_widget->getOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption).toString());
 
-	if (!m_widget || m_widget->getLastUrlClickTime().isNull() || m_widget->getLastUrlClickTime().secsTo(QDateTime::currentDateTimeUtc()) > 1)
+	if (m_widget->getLastUrlClickTime().isNull() || m_widget->getLastUrlClickTime().msecsTo(QDateTime::currentDateTimeUtc()) > 1000)
 	{
 		if (popupsPolicy == QLatin1String("blockAll"))
 		{
@@ -266,7 +420,7 @@ QWebEnginePage* QtWebEnginePage::createWindow(WebWindowType type)
 
 		if (popupsPolicy == QLatin1String("ask") || !m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption, m_widget->getUrl()).isNull())
 		{
-			QtWebEnginePage *page(new QtWebEnginePage(false, nullptr));
+			QtWebEnginePage *page(new QtWebEnginePage(profile(), m_widget));
 			page->markAsPopup();
 
 			connect(page, &QtWebEnginePage::aboutToNavigate, this, [=](const QUrl &url)
@@ -562,7 +716,24 @@ bool QtWebEnginePage::acceptNavigationRequest(const QUrl &url, NavigationType ty
 		}
 	}
 
-	scripts().clear();
+	// Keep Qt's per-page script registry alive while its frame observer is attached.
+	const QList<QWebEngineScript> navigationScripts(scripts().toList());
+
+	for (const QWebEngineScript &script: navigationScripts)
+	{
+		scripts().remove(script);
+	}
+
+	if (m_widget && m_widget->getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() == QLatin1String("onlyCached"))
+	{
+		QWebEngineScript imageVisibilityScript;
+		imageVisibilityScript.setName(QLatin1String("otter-image-cache"));
+		imageVisibilityScript.setSourceCode(m_widget->getImageCacheScript(true));
+		imageVisibilityScript.setInjectionPoint(QWebEngineScript::DocumentCreation);
+		imageVisibilityScript.setRunsOnSubFrames(true);
+
+		scripts().insert(imageVisibilityScript);
+	}
 
 	const QVector<UserScript*> userScripts(UserScript::getUserScriptsForUrl(url));
 
@@ -596,7 +767,7 @@ bool QtWebEnginePage::acceptNavigationRequest(const QUrl &url, NavigationType ty
 	return true;
 }
 
-bool QtWebEnginePage::certificateError(const QWebEngineCertificateError &error)
+bool QtWebEnginePage::shouldAcceptCertificate(const QWebEngineCertificateError &error)
 {
 	if (!m_widget || error.certificateChain().isEmpty())
 	{
@@ -626,6 +797,13 @@ bool QtWebEnginePage::certificateError(const QWebEngineCertificateError &error)
 
 	return false;
 }
+
+#if defined(USE_QT5)
+bool QtWebEnginePage::certificateError(const QWebEngineCertificateError &error)
+{
+	return shouldAcceptCertificate(error);
+}
+#endif
 
 bool QtWebEnginePage::javaScriptConfirm(const QUrl &url, const QString &message)
 {

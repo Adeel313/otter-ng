@@ -306,6 +306,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
 		return;
 	}
 
+	if (isLastWindow && !SessionsManager::isPrivate() && SessionsManager::getCurrentSession() == QLatin1String("default"))
+	{
+		SessionsManager::saveSession({}, {}, this);
+	}
+
 	m_isAboutToClose = true;
 
 	if (!SessionsManager::isPrivate())
@@ -313,10 +318,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
 		if (!isLastWindow)
 		{
 			SessionsManager::storeClosedWindow(this);
-		}
-		else if (SessionsManager::getCurrentSession() == QLatin1String("default"))
-		{
-			SessionsManager::saveSession();
 		}
 	}
 
@@ -624,7 +625,7 @@ void MainWindow::triggerAction(int identifier, const QVariantMap &parameters, Ac
 
 					if (window)
 					{
-						url = QUrl::fromUserInput(window->getContentsWidget()->parseQuery(parameters[QLatin1String("urlPlaceholder")].toString()));
+						url = Utils::fromUserInput(window->getContentsWidget()->parseQuery(parameters[QLatin1String("urlPlaceholder")].toString()));
 					}
 				}
 				else if (parameters.contains(QLatin1String("url")))
@@ -664,7 +665,7 @@ void MainWindow::triggerAction(int identifier, const QVariantMap &parameters, Ac
 					}
 					else
 					{
-						url = ((parameters[QLatin1String("url")].type() == QVariant::Url) ? parameters[QLatin1String("url")].toUrl() : QUrl::fromUserInput(parameters[QLatin1String("url")].toString()));
+						url = ((parameters[QLatin1String("url")].type() == QVariant::Url) ? parameters[QLatin1String("url")].toUrl() : Utils::fromUserInput(parameters[QLatin1String("url")].toString()));
 					}
 				}
 
@@ -1478,6 +1479,8 @@ void MainWindow::addWindow(Window *window, SessionsManager::OpenHints hints, int
 	connect(window, &Window::isPinnedChanged, this, &MainWindow::handleWindowIsPinnedChanged);
 	connect(window, &Window::requestedNewWindow, this, &MainWindow::openWindow);
 
+	SessionsManager::markSessionAsModified();
+
 	emit windowAdded(window->getIdentifier());
 }
 
@@ -1510,6 +1513,7 @@ void MainWindow::moveWindow(Window *window, MainWindow *mainWindow, const QVaria
 	m_tabBar->removeTab(getWindowIndex(window->getIdentifier()));
 
 	m_windows.remove(window->getIdentifier());
+	SessionsManager::markSessionAsModified();
 
 	if (!m_isPrivate && window->isPrivate())
 	{
@@ -1536,8 +1540,15 @@ void MainWindow::moveWindow(Window *window, MainWindow *mainWindow, const QVaria
 void MainWindow::setActiveEditorExecutor(const ActionExecutor::Object &executor)
 {
 	const QMetaMethod actionsStateChangedMethod(metaObject()->method(metaObject()->indexOfMethod("actionsStateChanged()")));
-	const QMetaMethod arbitraryActionsStateChangedMethod(metaObject()->method(metaObject()->indexOfMethod("arbitraryActionsStateChanged(QVector<int>)")));
-	const QMetaMethod categorizedActionsStateChangedMethod(metaObject()->method(metaObject()->indexOfMethod("categorizedActionsStateChanged(QVector<int>)")));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const int arbitraryActionsStateChangedMethodIndex(metaObject()->indexOfMethod("arbitraryActionsStateChanged(QList<int>)"));
+	const int categorizedActionsStateChangedMethodIndex(metaObject()->indexOfMethod("categorizedActionsStateChanged(QList<int>)"));
+#else
+	const int arbitraryActionsStateChangedMethodIndex(metaObject()->indexOfMethod("arbitraryActionsStateChanged(QVector<int>)"));
+	const int categorizedActionsStateChangedMethodIndex(metaObject()->indexOfMethod("categorizedActionsStateChanged(QVector<int>)"));
+#endif
+	const QMetaMethod arbitraryActionsStateChangedMethod((arbitraryActionsStateChangedMethodIndex >= 0) ? metaObject()->method(arbitraryActionsStateChangedMethodIndex) : QMetaMethod());
+	const QMetaMethod categorizedActionsStateChangedMethod((categorizedActionsStateChangedMethodIndex >= 0) ? metaObject()->method(categorizedActionsStateChangedMethodIndex) : QMetaMethod());
 
 	if (m_editorExecutor.isValid())
 	{
@@ -1740,6 +1751,7 @@ void MainWindow::handleRequestedCloseWindow(Window *window)
 	emit windowRemoved(window->getIdentifier());
 
 	m_windows.remove(window->getIdentifier());
+	SessionsManager::markSessionAsModified();
 
 	if (!m_isPrivate && window->isPrivate())
 	{

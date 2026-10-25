@@ -23,7 +23,12 @@
 #include "../../../../ui/WebWidget.h"
 
 #include <QtNetwork/QNetworkReply>
+#include <QtCore/QTimer>
+#if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineFullScreenRequest>
+#else
+#include <QtWebEngineCore/QWebEngineFullScreenRequest>
+#endif
 #include <QtWebEngineWidgets/QWebEngineView>
 
 namespace Otter
@@ -94,6 +99,7 @@ public:
 public slots:
 	void triggerAction(int identifier, const QVariantMap &parameters = {}, ActionsManager::TriggerType trigger = ActionsManager::UnknownTrigger) override;
 	void clearOptions() override;
+	void fillPassword(const PasswordsManager::Password &password) override;
 	void findInPage(const QString &text, FindFlags flags = NoFlagsFind) override;
 	void setActiveStyleSheet(const QString &styleSheet) override;
 	void setPermission(FeaturePermission feature, const QUrl &url, PermissionPolicies policies) override;
@@ -118,6 +124,7 @@ protected:
 	void setHistory(QDataStream &stream);
 	void setOptions(const QHash<int, QVariant> &options, const QStringList &excludedOptions = {}) override;
 	QWebEnginePage* getPage() const;
+	QString getImageCacheScript(bool onlyCached) const;
 	QString parsePosition(const QString &script, const QPoint &position) const;
 	QDateTime getLastUrlClickTime() const;
 	QStringList getBlockedElements() const;
@@ -159,6 +166,7 @@ private:
 	QDateTime m_lastUrlClickTime;
 	QPixmap m_thumbnail;
 	HitTestResult m_hitResult;
+	QTimer *m_imageReloadTimer;
 	QHash<QNetworkReply*, QPointer<SourceViewerWebWidget> > m_viewSourceReplies;
 	QMultiMap<QString, QString> m_metaData;
 	QStringList m_styleSheets;
@@ -170,11 +178,18 @@ private:
 	TrileanValue m_canGoForwardValue;
 	int m_documentLoadingProgress;
 	int m_focusProxyTimer;
+	int m_imageReloadAttempts;
 	int m_updateNavigationActionsTimer;
 	bool m_isClosing;
 	bool m_isEditing;
 	bool m_isFullScreen;
+	bool m_isReloadingImage;
 	bool m_isTypedIn;
+
+	void finishImageReload();
+	void reloadImage();
+	bool hasEditableFocus();
+	void notifySavePasswordRequested(const PasswordsManager::Password &password, bool isUpdate);
 
 friend class QtWebEnginePage;
 friend class QtWebEngineWebBackend;

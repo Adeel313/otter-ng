@@ -23,6 +23,11 @@
 
 #include "../../core/spellerplugin_p.h"
 #include "hunspell/hunspell.hxx"
+#if defined(USE_QT5)
+#include <QtCore/QTextCodec>
+#else
+#include <QtCore5Compat/QTextCodec>
+#endif
 
 class HunspellDict : public Sonnet::SpellerPlugin
 {

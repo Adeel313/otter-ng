@@ -43,6 +43,7 @@
 #include <QtGui/QDesktopServices>
 #include <QtGui/QDrag>
 #include <QtGui/QScreen>
+#include <QtNetwork/QHostAddress>
 #if QT_VERSION >= 0x060000
 #include <QtNetwork/private/qtldurl_p.h>
 #endif
@@ -578,6 +579,23 @@ QString getStandardLocation(QStandardPaths::StandardLocation type)
 	return (paths.isEmpty() ? QString() : paths.value(0));
 }
 
+QUrl fromUserInput(const QString &input)
+{
+	QUrl url(QUrl::fromUserInput(input));
+
+	if (url.scheme() == QLatin1String("http") && !input.startsWith(QLatin1String("http:"), Qt::CaseInsensitive))
+	{
+		const QString host(url.host());
+
+		if (!host.isEmpty() && host.contains(QLatin1Char('.')) && QHostAddress(host).isNull() && host != QLatin1String("localhost") && !host.endsWith(QLatin1String(".localhost")))
+		{
+			return QUrl::fromUserInput(QLatin1String("https://") + input);
+		}
+	}
+
+	return url;
+}
+
 QUrl expandUrl(const QUrl &url)
 {
 	if (!url.isValid() || !url.scheme().isEmpty())
@@ -587,10 +605,10 @@ QUrl expandUrl(const QUrl &url)
 
 	if (!url.path().startsWith(QLatin1Char('/')))
 	{
-		QUrl httpUrl(url);
-		httpUrl.setScheme(QLatin1String("http"));
+		QUrl httpsUrl(url);
+		httpsUrl.setScheme(QLatin1String("https"));
 
-		return httpUrl;
+		return httpsUrl;
 	}
 
 	QUrl localUrl(url);

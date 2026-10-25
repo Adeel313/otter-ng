@@ -61,44 +61,6 @@ void AddressCompletionModel::updateModel()
 	QVector<CompletionEntry> completions;
 	completions.reserve(10);
 
-	if (m_types.testFlag(SearchSuggestionsCompletionType))
-	{
-		const QString keyword(m_filter.section(QLatin1Char(' '), 0, 0));
-		const SearchEnginesManager::SearchEngineDefinition searchEngine(SearchEnginesManager::getSearchEngine(keyword, true));
-		QString title(m_defaultSearchEngine.title);
-		QString text(m_filter);
-		QIcon icon(m_defaultSearchEngine.icon);
-
-		if (searchEngine.isValid())
-		{
-			title = searchEngine.title;
-			text = m_filter.section(QLatin1Char(' '), 1, -1);
-			icon = searchEngine.icon;
-		}
-		else if (keyword == QLatin1String("?"))
-		{
-			text = m_filter.section(QLatin1Char(' '), 1, -1);
-		}
-
-		if (icon.isNull())
-		{
-			icon = ThemesManager::createIcon(QLatin1String("edit-find"));
-		}
-
-		if (m_showCompletionCategories)
-		{
-			completions.append(CompletionEntry({}, tr("Search with %1").arg(title), {}, {}, {}, CompletionEntry::HeaderType));
-
-			title.clear();
-		}
-
-		CompletionEntry completionEntry({}, title, {}, icon, {}, CompletionEntry::SearchSuggestionType);
-		completionEntry.text = text;
-		completionEntry.keyword = keyword;
-
-		completions.append(completionEntry);
-	}
-
 	if (m_types.testFlag(BookmarksCompletionType))
 	{
 		const QVector<BookmarksModel::BookmarkMatch> bookmarks(BookmarksManager::findBookmarks(m_filter));
@@ -164,6 +126,58 @@ void AddressCompletionModel::updateModel()
 		}
 	}
 
+	if (m_types.testFlag(SearchSuggestionsCompletionType))
+	{
+		const QString keyword(m_filter.section(QLatin1Char(' '), 0, 0));
+		const SearchEnginesManager::SearchEngineDefinition searchEngine(SearchEnginesManager::getSearchEngine(keyword, true));
+		QString title(m_defaultSearchEngine.title);
+		QString text(m_filter);
+		QIcon icon(m_defaultSearchEngine.icon);
+
+		if (searchEngine.isValid())
+		{
+			title = searchEngine.title;
+			text = m_filter.section(QLatin1Char(' '), 1, -1);
+			icon = searchEngine.icon;
+		}
+		else if (keyword == QLatin1String("?"))
+		{
+			text = m_filter.section(QLatin1Char(' '), 1, -1);
+		}
+
+		if (icon.isNull())
+		{
+			icon = ThemesManager::createIcon(QLatin1String("edit-find"));
+		}
+
+		if (m_showCompletionCategories)
+		{
+			completions.append(CompletionEntry({}, tr("Search with %1").arg(title), {}, {}, {}, CompletionEntry::HeaderType));
+
+			title.clear();
+		}
+
+		CompletionEntry completionEntry({}, title, {}, icon, {}, CompletionEntry::SearchSuggestionType);
+		completionEntry.text = text;
+		completionEntry.keyword = keyword;
+
+		completions.append(completionEntry);
+
+		for (const QString &suggestion: m_searchSuggestions)
+		{
+			if (suggestion.trimmed().isEmpty() || suggestion.compare(text, Qt::CaseInsensitive) == 0)
+			{
+				continue;
+			}
+
+			CompletionEntry suggestionEntry({}, {}, {}, m_searchSuggestionIcon, {}, CompletionEntry::SearchSuggestionType);
+			suggestionEntry.text = suggestion;
+			suggestionEntry.keyword = m_searchSuggestionKeyword;
+
+			completions.append(suggestionEntry);
+		}
+	}
+
 	if (m_types.testFlag(TypedHistoryCompletionType))
 	{
 		const QVector<HistoryModel::HistoryEntryMatch> entries(HistoryManager::findEntries({}, true));
@@ -204,6 +218,33 @@ void AddressCompletionModel::updateModel()
 		}
 	}
 
+	QVector<CompletionEntry> filteredCompletions;
+	QVector<CompletionEntry> pendingHeaders;
+	filteredCompletions.reserve(completions.count());
+
+	for (const CompletionEntry &entry: completions)
+	{
+		if (entry.type == CompletionEntry::HeaderType)
+		{
+			if (!entry.title.trimmed().isEmpty())
+			{
+				pendingHeaders.append(entry);
+			}
+
+			continue;
+		}
+
+		if (entry.text.trimmed().isEmpty() && entry.url.isEmpty())
+		{
+			continue;
+		}
+
+		filteredCompletions += pendingHeaders;
+		pendingHeaders.clear();
+		filteredCompletions.append(entry);
+	}
+
+	completions = filteredCompletions;
 	completions.squeeze();
 
 	beginResetModel();
@@ -263,6 +304,18 @@ void AddressCompletionModel::setTypes(CompletionTypes types, bool force)
 	updateModel();
 }
 
+void AddressCompletionModel::setSearchSuggestions(const QStringList &suggestions, const QString &keyword, const QIcon &icon)
+{
+	m_searchSuggestions = suggestions;
+	m_searchSuggestionKeyword = keyword;
+	m_searchSuggestionIcon = icon;
+
+	if (!m_filter.isEmpty())
+	{
+		updateModel();
+	}
+}
+
 QVariant AddressCompletionModel::data(const QModelIndex &index, int role) const
 {
 	if (index.column() != 0 || !(index.row() >= 0 && index.row() < m_completions.count()))
@@ -289,6 +342,11 @@ QVariant AddressCompletionModel::data(const QModelIndex &index, int role) const
 		case KeywordRole:
 			return entry.keyword;
 		case MatchRole:
+			if (entry.match.isEmpty() && (entry.type == CompletionEntry::BookmarkType || entry.type == CompletionEntry::HistoryType || entry.type == CompletionEntry::TypedHistoryType))
+			{
+				return {};
+			}
+
 			return (entry.match.isEmpty() ? entry.url.toString() : entry.match);
 		case TimeVisitedRole:
 			return entry.timeVisited;

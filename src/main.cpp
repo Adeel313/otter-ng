@@ -35,6 +35,9 @@
 #include <QtCore/QStandardPaths>
 #endif
 #include <QtCore/QUrl>
+#if defined(Q_OS_LINUX)
+#include <QtCore/QFileInfo>
+#endif
 #include <QtWidgets/QMessageBox>
 
 using namespace Otter;
@@ -100,6 +103,20 @@ int main(int argc, char *argv[])
 {
 	QT_REQUIRE_VERSION(argc, argv, QT_VERSION_STR)
 
+#if defined(Q_OS_LINUX)
+	// Some bundled QtWebEngine builds do not find the host Fontconfig paths
+	// automatically. Set explicit system defaults before Qt or Chromium starts.
+	if (qEnvironmentVariableIsEmpty("FONTCONFIG_FILE") && QFileInfo::exists(QLatin1String("/etc/fonts/fonts.conf")))
+	{
+		qputenv("FONTCONFIG_FILE", QByteArrayLiteral("/etc/fonts/fonts.conf"));
+	}
+
+	if (qEnvironmentVariableIsEmpty("FONTCONFIG_PATH") && QFileInfo::exists(QLatin1String("/etc/fonts/fonts.conf")))
+	{
+		qputenv("FONTCONFIG_PATH", QByteArrayLiteral("/etc/fonts"));
+	}
+#endif
+
 #if !defined(Q_OS_WIN32)
 	qSetMessagePattern(QLatin1String("%{if-category}%{category}: %{endif}%{message}\n"));
 	qInstallMessageHandler(otterMessageHander);
@@ -127,6 +144,24 @@ int main(int argc, char *argv[])
 	Application::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
 #endif
 
+	///XXX propagate proxy environment variables to the Qt WebEngine engine's child processes
+	if (!qgetenv("http_proxy").isEmpty())
+	{
+		qputenv("HTTP_PROXY", QByteArray(qgetenv("http_proxy")));
+	}
+	if (!qgetenv("https_proxy").isEmpty())
+	{
+		qputenv("HTTPS_PROXY", QByteArray(qgetenv("https_proxy")));
+	}
+	if (!qgetenv("all_proxy").isEmpty())
+	{
+		qputenv("ALL_PROXY", QByteArray(qgetenv("all_proxy")));
+	}
+	if (!qgetenv("ALL_PROXY").isEmpty())
+	{
+		qputenv("all_proxy", QByteArray(qgetenv("ALL_PROXY")));
+	}
+
 	Application application(argc, argv);
 
 #ifdef OTTER_NO_WEB_BACKENDS
@@ -148,10 +183,12 @@ int main(int argc, char *argv[])
 
 	if (!commandLineParser->value(QLatin1String("session")).isEmpty() && SessionsManager::getSession(session).isClean)
 	{
+		qDebug() << "OTTER-DEBUG main branch: explicit session restore, behavior:" << startupBehavior;
 		SessionsManager::restoreSession(SessionsManager::getSession(session), nullptr, isPrivate);
 	}
 	else if (startupBehavior == QLatin1String("showDialog") || commandLineParser->isSet(QLatin1String("session-chooser")) || !SessionsManager::getSession(session).isClean)
 	{
+		qDebug() << "OTTER-DEBUG main branch: startup dialog";
 		StartupDialog dialog(session);
 
 		if (dialog.exec() == QDialog::Rejected)
@@ -163,10 +200,12 @@ int main(int argc, char *argv[])
 	}
 	else if (startupBehavior == QLatin1String("continuePrevious"))
 	{
+		qDebug() << "OTTER-DEBUG main branch: continuePrevious";
 		SessionsManager::restoreSession(SessionsManager::getSession(QLatin1String("default")), nullptr, isPrivate);
 	}
 	else
 	{
+		qDebug() << "OTTER-DEBUG main branch: else (start page/home), behavior:" << startupBehavior;
 		SessionInformation sessionData(SessionsManager::getSession(QLatin1String("default")));
 		sessionData.path = QLatin1String("default");
 		sessionData.title = QCoreApplication::translate("main", "Default");

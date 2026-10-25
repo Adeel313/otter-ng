@@ -247,7 +247,7 @@
 				]
 			},
 			{
-				"action": "FastForward",
+				"action": "ScrollPageDown",
 				"shortcuts": [
 					"Space"
 				]

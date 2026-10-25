@@ -724,6 +724,11 @@ void Menu::populateBookmarksMenu()
 {
 	const BookmarksModel::Bookmark *folderBookmark(BookmarksManager::getBookmark(m_menuOptions));
 
+	if (!folderBookmark)
+	{
+		return;
+	}
+
 	if (!isEmpty() && !(folderBookmark->getType() == BookmarksModel::RootBookmark && actions().count() == 3))
 	{
 		return;
@@ -798,6 +803,12 @@ void Menu::populateBookmarkSelectorMenu()
 	}
 
 	const BookmarksModel::Bookmark *folderBookmark(BookmarksManager::getBookmark(m_menuOptions));
+
+	if (!folderBookmark)
+	{
+		return;
+	}
+
 	Action *addFolderAction(new MenuAction(QT_TRANSLATE_NOOP("actions", "This Folder"), true, this));
 	addFolderAction->setIconOverride(QLatin1String("document-open-folder"));
 	addFolderAction->setData(folderBookmark->getIdentifier());
@@ -1195,6 +1206,11 @@ void Menu::populateNotesMenu()
 	}
 
 	const BookmarksModel::Bookmark *folderBookmark(NotesManager::getModel()->getBookmark(m_menuOptions.value(QLatin1String("bookmark")).toULongLong()));
+
+	if (!folderBookmark)
+	{
+		return;
+	}
 
 	for (int i = 0; i < folderBookmark->rowCount(); ++i)
 	{

@@ -95,6 +95,7 @@ public:
 	explicit AddressCompletionModel(QObject *parent = nullptr);
 
 	void setTypes(CompletionTypes types, bool force = false);
+	void setSearchSuggestions(const QStringList &suggestions, const QString &keyword, const QIcon &icon);
 	QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 	QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 	Qt::ItemFlags flags(const QModelIndex &index) const override;
@@ -111,6 +112,9 @@ protected:
 private:
 	QVector<CompletionEntry> m_completions;
 	QString m_filter;
+	QString m_searchSuggestionKeyword;
+	QStringList m_searchSuggestions;
+	QIcon m_searchSuggestionIcon;
 	SearchEnginesManager::SearchEngineDefinition m_defaultSearchEngine;
 	AddressCompletionModel::CompletionTypes m_types;
 	int m_updateTimer;

@@ -114,7 +114,7 @@ FreeDesktopOrgPlatformIntegration::FreeDesktopOrgPlatformIntegration(QObject *pa
 	, m_notificationsInterface(nullptr)
 #endif
 {
-	QGuiApplication::setDesktopFileName(QLatin1String(DESKTOP_ENTRY_NAME) + QLatin1String(".desktop"));
+	QGuiApplication::setDesktopFileName(QLatin1String(DESKTOP_ENTRY_NAME));
 
 	QTimer::singleShot(250, this, [&]()
 	{

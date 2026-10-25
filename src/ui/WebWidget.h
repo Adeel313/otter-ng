@@ -282,7 +282,7 @@ protected:
 	void timerEvent(QTimerEvent *event) override;
 	void openUrl(const QUrl &url, SessionsManager::OpenHints hints);
 	void startReloadTimer();
-	void startTransfer(Transfer *transfer);
+	void startTransfer(Transfer *transfer, bool lockEventLoop = false);
 	void handleToolTipEvent(QHelpEvent *event, QWidget *widget);
 	void updateHitTestResult(const QPoint &position);
 	virtual void updateWatchedData(ChangeWatcher watcher);

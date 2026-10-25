@@ -25,6 +25,7 @@
 #include "../ui/MainWindow.h"
 #include "../ui/Window.h"
 
+#include <QtCore/QDebug>
 #include <QtCore/QDir>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
@@ -219,7 +220,10 @@ Session::Identity SessionsManager::getIdentity(const QString &name)
 SessionInformation SessionsManager::getSession(const QString &path)
 {
 	SessionInformation session;
-	const JsonSettings settings(getSessionPath(path));
+	const QString sessionPath(getSessionPath(path));
+	const JsonSettings settings(sessionPath);
+
+	qDebug() << "OTTER-DEBUG getSession path:" << sessionPath << "exists:" << QFileInfo::exists(sessionPath) << "isNull:" << settings.isNull();
 
 	if (settings.isNull())
 	{
@@ -232,6 +236,8 @@ SessionInformation SessionsManager::getSession(const QString &path)
 	const int defaultZoom(SettingsManager::getOption(SettingsManager::Content_DefaultZoomOption).toInt());
 	const QJsonObject settingsObject(settings.object());
 	const QJsonArray mainWindowsArray(settingsObject.value(QLatin1String("windows")).toArray());
+
+	qDebug() << "OTTER-DEBUG getSession parsed mainWindows:" << mainWindowsArray.count() << "rootKeys:" << settingsObject.keys();
 
 	session.path = path;
 	session.title = settingsObject.value(QLatin1String("title")).toString((path == QLatin1String("default")) ? tr("Default") : tr("(Untitled)"));
@@ -628,6 +634,26 @@ bool SessionsManager::saveSession(const SessionInformation &session)
 		return false;
 	}
 
+	if (session.path == getSessionPath(QLatin1String("default")))
+	{
+		bool hasTabs(false);
+
+		for (const Session::MainWindow &mainWindow: session.windows)
+		{
+			if (!mainWindow.windows.isEmpty())
+			{
+				hasTabs = true;
+
+				break;
+			}
+		}
+
+		if (!hasTabs)
+		{
+			return false;
+		}
+	}
+
 	QString path(session.path);
 
 	if (path.isEmpty())
@@ -841,7 +867,14 @@ bool SessionsManager::saveSession(const SessionInformation &session)
 	JsonSettings settings;
 	settings.setObject(sessionObject);
 
-	return settings.save(path);
+	if (!settings.save(path))
+	{
+		qWarning() << "Failed to write session file:" << path;
+
+		return false;
+	}
+
+	return true;
 }
 
 bool SessionsManager::deleteSession(const QString &path)

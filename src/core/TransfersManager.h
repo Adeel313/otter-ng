@@ -84,7 +84,7 @@ public slots:
 	void openTarget() const;
 	virtual void cancel();
 	virtual void stop();
-	void setOpenCommand(const QString &command);
+	virtual void setOpenCommand(const QString &command);
 	virtual bool resume();
 	virtual bool restart();
 	virtual bool setTarget(const QString &target, bool canOverwriteExisting = false);

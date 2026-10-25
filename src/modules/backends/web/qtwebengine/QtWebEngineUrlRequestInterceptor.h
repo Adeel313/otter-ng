@@ -25,6 +25,8 @@
 #include "../../../../core/NetworkManager.h"
 #include "../../../../core/NetworkManagerFactory.h"
 
+#include <QtCore/QMutex>
+#include <QtCore/QUrl>
 #include <QtWebEngineCore/QWebEngineUrlRequestInterceptor>
 
 namespace Otter
@@ -55,13 +57,18 @@ private:
 	QString m_userAgent;
 	QStringList m_blockedElements;
 	QStringList m_unblockedHosts;
+	QUrl m_imageReloadUrl;
 	QVector<NetworkManager::ResourceInformation> m_blockedRequests;
 	QVector<int> m_contentBlockingProfiles;
+	QMutex m_imageReloadMutex;
 	NetworkManagerFactory::DoNotTrackPolicy m_doNotTrackPolicy;
 	quint64 m_startedRequestsAmount;
 	bool m_areImagesEnabled;
 	bool m_canSendReferrer;
 	bool m_isWorkingOffline;
+
+	void setImageReloadUrl(const QUrl &url);
+	void clearImageReloadUrl();
 
 	static WebBackend *m_backend;
 

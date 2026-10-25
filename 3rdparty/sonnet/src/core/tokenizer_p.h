@@ -22,6 +22,11 @@
 #define ABSTRACTTOKENIZER_H
 
 #include <QtCore/QString>
+#if defined(USE_QT5)
+#include <QtCore/QStringRef>
+#else
+#include <QtCore5Compat/QStringRef>
+#endif
 
 namespace Sonnet
 {

@@ -96,7 +96,7 @@ protected:
 	void hideEvent(QHideEvent *event) override;
 	void focusInEvent(QFocusEvent *event) override;
 	void updateFocus();
-	void setContentsWidget(ContentsWidget *widget);
+	void setContentsWidget(ContentsWidget *widget, bool restoreHistory = true);
 
 private:
 	Q_DISABLE_COPY(Window)

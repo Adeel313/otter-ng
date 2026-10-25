@@ -960,7 +960,7 @@ bool Transfer::setTarget(const QString &target, bool canOverwriteExisting)
 		connect(m_reply, &QNetworkReply::readyRead, this, &Transfer::handleDataAvailable);
 	}
 
-	return false;
+	return true;
 }
 
 TransfersManager::TransfersManager(QObject *parent) : QObject(parent),

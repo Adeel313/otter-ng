@@ -26,28 +26,43 @@
 namespace Otter
 {
 
-QtWebEngineTransfer::QtWebEngineTransfer(QWebEngineDownloadItem *item, TransferOptions options, QObject *parent) : Transfer(options, parent),
+QtWebEngineTransfer::QtWebEngineTransfer(QtWebEngineDownload *item, TransferOptions options, QObject *parent) : Transfer(options, parent),
 	m_item(item)
 {
-	m_item->accept();
 	m_item->setParent(this);
 
 	markAsStarted();
 
+#if defined(USE_QT5)
 	connect(m_item, &QWebEngineDownloadItem::finished, this, &QtWebEngineTransfer::markAsFinished);
 	connect(m_item, &QWebEngineDownloadItem::downloadProgress, this, &QtWebEngineTransfer::handleDownloadProgress);
-	connect(m_item, &QWebEngineDownloadItem::stateChanged, this, [&](QWebEngineDownloadItem::DownloadState state)
+#else
+	connect(m_item, &QWebEngineDownloadRequest::receivedBytesChanged, this, [this]()
+	{
+		handleDownloadProgress(m_item->receivedBytes(), m_item->totalBytes());
+	});
+	connect(m_item, &QWebEngineDownloadRequest::totalBytesChanged, this, [this]()
+	{
+		handleDownloadProgress(m_item->receivedBytes(), m_item->totalBytes());
+	});
+#endif
+	connect(m_item, &QtWebEngineDownload::stateChanged, this, [&](QtWebEngineDownload::DownloadState state)
 	{
 		switch (state)
 		{
-			case QWebEngineDownloadItem::DownloadCancelled:
-			case QWebEngineDownloadItem::DownloadCompleted:
-			case QWebEngineDownloadItem::DownloadInterrupted:
+			case QtWebEngineDownload::DownloadCancelled:
+			case QtWebEngineDownload::DownloadCompleted:
+			case QtWebEngineDownload::DownloadInterrupted:
 				emit stopped();
 
 				break;
 			default:
 				break;
+		}
+
+		if (state == QtWebEngineDownload::DownloadCompleted)
+		{
+			markAsFinished();
 		}
 
 		emit changed();
@@ -58,8 +73,12 @@ void QtWebEngineTransfer::cancel()
 {
 	if (m_item)
 	{
+		QObject::disconnect(m_item, nullptr, this, nullptr);
 		m_item->cancel();
 		m_item->deleteLater();
+		m_item.clear();
+
+		Transfer::cancel();
 	}
 	else
 	{
@@ -136,14 +155,14 @@ Transfer::TransferState QtWebEngineTransfer::getState() const
 
 	switch (m_item->state())
 	{
-		case QWebEngineDownloadItem::DownloadRequested:
-		case QWebEngineDownloadItem::DownloadInProgress:
+		case QtWebEngineDownload::DownloadRequested:
+		case QtWebEngineDownload::DownloadInProgress:
 			return RunningState;
-		case QWebEngineDownloadItem::DownloadCompleted:
+		case QtWebEngineDownload::DownloadCompleted:
 			return FinishedState;
-		case QWebEngineDownloadItem::DownloadCancelled:
+		case QtWebEngineDownload::DownloadCancelled:
 			return CancelledState;
-		case QWebEngineDownloadItem::DownloadInterrupted:
+		case QtWebEngineDownload::DownloadInterrupted:
 			return ErrorState;
 	}
 
@@ -157,12 +176,26 @@ bool QtWebEngineTransfer::setTarget(const QString &target, bool canOverwriteExis
 		return Transfer::setTarget(target, canOverwriteExisting);
 	}
 
-	const QFileInfo fileInformation(target);
+	if (m_item->state() == QtWebEngineDownload::DownloadRequested)
+	{
+		const QFileInfo fileInformation(target);
 
-	m_item->setDownloadDirectory(fileInformation.path());
-	m_item->setDownloadFileName(fileInformation.fileName());
+		m_item->setDownloadDirectory(fileInformation.path());
+		m_item->setDownloadFileName(fileInformation.fileName());
+		m_item->accept();
+	}
 
 	return true;
+}
+
+void QtWebEngineTransfer::setOpenCommand(const QString &command)
+{
+	Transfer::setOpenCommand(command);
+
+	if (m_item && m_item->state() == QtWebEngineDownload::DownloadRequested)
+	{
+		m_item->accept();
+	}
 }
 
 }

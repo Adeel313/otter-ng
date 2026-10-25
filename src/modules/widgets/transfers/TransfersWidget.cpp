@@ -51,7 +51,7 @@ TransfersWidget::TransfersWidget(const ToolBarsManager::ToolBarDefinition::Entry
 	updateState();
 
 	connect(TransfersManager::getInstance(), &TransfersManager::transferChanged, this, &TransfersWidget::updateState);
-	connect(TransfersManager::getInstance(), &TransfersManager::transferStarted, this, [&](Transfer *transfer)
+	connect(TransfersManager::getInstance(), &TransfersManager::transferStarted, this, [this, menu](Transfer *transfer)
 	{
 		if ((!transfer->isArchived() || transfer->getState() == Transfer::RunningState) && menu->isVisible())
 		{
@@ -65,7 +65,7 @@ TransfersWidget::TransfersWidget(const ToolBarsManager::ToolBarDefinition::Entry
 
 		updateState();
 	});
-	connect(TransfersManager::getInstance(), &TransfersManager::transferFinished, this, [&](const Transfer *transfer)
+	connect(TransfersManager::getInstance(), &TransfersManager::transferFinished, this, [this, menu](const Transfer *transfer)
 	{
 		const QList<QAction*> actions(menu->actions());
 

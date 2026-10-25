@@ -92,9 +92,7 @@ SpellerPlugin *Loader::createSpeller(const QString &language,
         return 0;
     }
 
-    QVectorIterator<Client *> itr(lClients);
-    while (itr.hasNext()) {
-        Client *item = itr.next();
+    for (Client *item : lClients) {
         if (!pclient.isEmpty()) {
             if (pclient == item->name()) {
                 SpellerPlugin *dict = item->createSpeller(plang);
@@ -292,4 +290,3 @@ void Loader::changed()
 }
 
 }
-

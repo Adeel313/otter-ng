@@ -7,6 +7,11 @@ if (NOT TARGET ${QT_VERSION}::WebEngineWidgets)
 	return ()
 endif ()
 
+if (NOT ENABLE_QT5)
+	find_package(Qt6 6.4 REQUIRED COMPONENTS Pdf)
+	list(APPEND OTTER_LINK_LIBRARIES Qt6::Pdf)
+endif ()
+
 add_definitions(-DOTTER_ENABLE_QTWEBENGINE)
 
 list(APPEND OTTER_BACKENDS_WEB "QtWebEngine")
