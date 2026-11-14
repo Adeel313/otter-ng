@@ -596,11 +596,11 @@ TabBarWidget::TabBarWidget(QWidget *parent) : QTabBar(parent),
 	setDocumentMode(true);
 	setMaximumSize(0, 0);
 	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-	updateStyle();
 	handleOptionChanged(SettingsManager::TabBar_MaximumTabHeightOption, SettingsManager::getOption(SettingsManager::TabBar_MaximumTabHeightOption));
 	handleOptionChanged(SettingsManager::TabBar_MinimumTabHeightOption, SettingsManager::getOption(SettingsManager::TabBar_MinimumTabHeightOption));
 	handleOptionChanged(SettingsManager::TabBar_MaximumTabWidthOption, SettingsManager::getOption(SettingsManager::TabBar_MaximumTabWidthOption));
 	handleOptionChanged(SettingsManager::TabBar_MinimumTabWidthOption, SettingsManager::getOption(SettingsManager::TabBar_MinimumTabWidthOption));
+	updateStyle();
 
 	const ToolBarWidget *toolBar(qobject_cast<ToolBarWidget*>(parent));
 

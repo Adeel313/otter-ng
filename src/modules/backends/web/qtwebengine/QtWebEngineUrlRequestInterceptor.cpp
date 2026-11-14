@@ -109,8 +109,13 @@ void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo
 
 				break;
 			case QWebEngineUrlRequestInfo::ResourceTypeObject:
-			case QWebEngineUrlRequestInfo::ResourceTypeMedia:
 				resourceType = NetworkManager::ObjectType;
+
+				break;
+			case QWebEngineUrlRequestInfo::ResourceTypeMedia:
+				// Media is not a plugin/object resource. Treating it as ObjectType
+				// makes ordinary adblock "object" rules block HTML5 video/audio.
+				resourceType = NetworkManager::OtherType;
 
 				break;
 			case QWebEngineUrlRequestInfo::ResourceTypePluginResource:
@@ -219,7 +224,7 @@ void QtWebEngineUrlRequestInterceptor::updateOptions(const QUrl &url)
 		m_doNotTrackPolicy = NetworkManagerFactory::SkipTrackPolicy;
 	}
 
-	m_areImagesEnabled = (getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() != QLatin1String("disabled"));
+	m_areImagesEnabled = (getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() == QLatin1String("enabled"));
 	m_canSendReferrer = getOption(SettingsManager::Network_EnableReferrerOption, url).toBool();
 	m_isWorkingOffline = getOption(SettingsManager::Network_WorkOfflineOption, url).toBool();
 }

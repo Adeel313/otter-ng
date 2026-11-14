@@ -5,9 +5,11 @@
         <file>resources/getLinks.js</file>
         <file>resources/getStyleSheets.js</file>
         <file>resources/hideElements.js</file>
+        <file>resources/imageVisibility.js</file>
         <file>resources/hideBlockedRequests.js</file>
         <file>resources/hitTest.js</file>
         <file>resources/formExtractor.js</file>
         <file>resources/formFiller.js</file>
+        <file>resources/formData.js</file>
     </qresource>
 </RCC>

@@ -124,7 +124,7 @@ protected:
 	void setHistory(QDataStream &stream);
 	void setOptions(const QHash<int, QVariant> &options, const QStringList &excludedOptions = {}) override;
 	QWebEnginePage* getPage() const;
-	QString getImageCacheScript(bool onlyCached) const;
+	QString getImageVisibilityScript(bool hideImages) const;
 	QString parsePosition(const QString &script, const QPoint &position) const;
 	QDateTime getLastUrlClickTime() const;
 	QStringList getBlockedElements() const;

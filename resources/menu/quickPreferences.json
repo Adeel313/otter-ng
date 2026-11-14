@@ -12,7 +12,8 @@
 			"type": "menu",
 			"options":
 			{
-				"option": "Permissions/EnableImages"
+				"option": "Permissions/EnableImages",
+				"global": true
 			}
 		},
 		{

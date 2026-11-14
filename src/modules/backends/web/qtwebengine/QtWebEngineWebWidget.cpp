@@ -60,16 +60,21 @@
 #include <QtPrintSupport/QPrintPreviewDialog>
 #include <QtWebEngineCore/QWebEngineCookieStore>
 #include <QtWebEngineCore/QWebEngineFindTextResult>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QtWebEngineCore/QWebEngineFrame>
+#endif
 #if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineHistory>
 #include <QtWebEngineWidgets/QWebEngineProfile>
 #include <QtWebEngineWidgets/QWebEngineScript>
+#include <QtWebEngineWidgets/QWebEngineScriptCollection>
 #include <QtWebEngineWidgets/QWebEngineSettings>
 #else
 #include <QtWebEngineCore/QWebEngineHistory>
 #include <QtWebEngineCore/QWebEngineHttpRequest>
 #include <QtWebEngineCore/QWebEngineProfile>
 #include <QtWebEngineCore/QWebEngineScript>
+#include <QtWebEngineCore/QWebEngineScriptCollection>
 #include <QtWebEngineCore/QWebEngineSettings>
 #include <QtPdf/QPdfDocument>
 #endif
@@ -223,12 +228,12 @@ void QtWebEngineWebWidget::finishImageReload()
 	m_imageReloadTimer->stop();
 	m_requestInterceptor->clearImageReloadUrl();
 	m_page->runJavaScript(QStringLiteral("delete window.__otterImageReloadTarget;"));
-	m_page->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, (getOption(SettingsManager::Permissions_EnableImagesOption, getUrl()).toString() != QLatin1String("disabled")));
+	m_page->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, (getOption(SettingsManager::Permissions_EnableImagesOption, getUrl()).toString() == QLatin1String("enabled")));
 }
 
-QString QtWebEngineWebWidget::getImageCacheScript(bool onlyCached) const
+QString QtWebEngineWebWidget::getImageVisibilityScript(bool hideImages) const
 {
-	return QStringLiteral("(()=>{if(window.__otterImageCacheObserver){window.__otterImageCacheObserver.disconnect();window.__otterImageCacheObserver=null;}const initialize=()=>{const root=document.documentElement;if(!root){return;}const styleId='otter-cached-images-style';let style=document.getElementById(styleId);if(!%1){if(style){style.remove();}document.querySelectorAll('.otter-cached-image-hidden').forEach(image=>image.classList.remove('otter-cached-image-hidden'));return;}if(!style){style=document.createElement('style');style.id=styleId;style.textContent='img.otter-cached-image-hidden:not(.otter-image-reloaded){object-fit:none!important;object-position:100000px 100000px!important;background-color:rgba(128,128,128,.08);background-image:linear-gradient(135deg,transparent 46%,#888 47%,#888 53%,transparent 54%),linear-gradient(45deg,transparent 46%,#888 47%,#888 53%,transparent 54%);background-repeat:no-repeat;background-position:center;background-size:18px 18px;outline:1px solid rgba(128,128,128,.25)}';(document.head||root).appendChild(style);}const markLoaded=image=>{if(image.complete&&image.naturalWidth>0&&!image.classList.contains('otter-image-reloaded')){image.classList.add('otter-cached-image-hidden');}};const observeImage=image=>{markLoaded(image);image.addEventListener('load',()=>markLoaded(image));};document.querySelectorAll('img').forEach(observeImage);window.__otterImageCacheObserver=new MutationObserver(records=>{for(const record of records){if(record.type==='attributes'){observeImage(record.target);}else{record.addedNodes.forEach(node=>{if(node.nodeType!==Node.ELEMENT_NODE){return;}const images=node.matches('img')?[node]:[];images.push(...node.querySelectorAll('img'));images.forEach(observeImage);});}}});window.__otterImageCacheObserver.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['src','srcset']});};if(document.documentElement){initialize();}else{document.addEventListener('DOMContentLoaded',initialize,{once:true});}})()").arg(onlyCached ? QLatin1String("true") : QLatin1String("false"));
+	return m_page->createScriptSource(QLatin1String("imageVisibility"), {hideImages ? QLatin1String("true") : QLatin1String("false")});
 }
 
 void QtWebEngineWebWidget::reloadImage()
@@ -1194,6 +1199,11 @@ void QtWebEngineWebWidget::handleLoadFinished()
 	{
 		m_page->runJavaScript(getFastForwardScript(false), [&](const QVariant &result)
 		{
+			if (m_isClosing)
+			{
+				return;
+			}
+
 			m_canGoForwardValue = (result.toBool() ? TrueValue : FalseValue);
 
 			emit arbitraryActionsStateChanged({ActionsManager::FastForwardAction});
@@ -1451,6 +1461,8 @@ void QtWebEngineWebWidget::notifyRenderProcessTerminated(QWebEnginePage::RenderP
 {
 	if (status != QWebEnginePage::NormalTerminationStatus)
 	{
+		qWarning() << "Render process terminated with status" << status << "for" << m_page->url();
+
 		m_loadingState = CrashedLoadingState;
 
 		emit loadingStateChanged(CrashedLoadingState);
@@ -1487,17 +1499,60 @@ void QtWebEngineWebWidget::updateOptions(const QUrl &url)
 	const QString encoding(getOption(SettingsManager::Content_DefaultCharacterEncodingOption, url).toString());
 	const QString imageOption(getOption(SettingsManager::Permissions_EnableImagesOption, url).toString());
 	QWebEngineSettings *settings(m_page->settings());
+	m_requestInterceptor->updateOptions(url);
 	settings->setAttribute(QWebEngineSettings::AllowRunningInsecureContent, getOption(SettingsManager::Security_AllowMixedContentOption, url).toBool());
-	settings->setAttribute(QWebEngineSettings::AutoLoadImages, (imageOption != QLatin1String("disabled")));
+	// Disabling automatic loads still permits decoded images from Blink's memory cache.
+	settings->setAttribute(QWebEngineSettings::AutoLoadImages, (imageOption == QLatin1String("enabled")));
 	settings->setAttribute(QWebEngineSettings::DnsPrefetchEnabled, getOption(SettingsManager::Network_EnableDnsPrefetchOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::JavascriptEnabled, getOption(SettingsManager::Permissions_EnableJavaScriptOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, getOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, (getOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption, url).toString() != QLatin1String("blockAll")));
 	settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, getOption(SettingsManager::Permissions_EnableLocalStorageOption, url).toBool());
+	settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, (getOption(SettingsManager::Permissions_EnableMediaPlaybackAudioOption, url).toString() != QLatin1String("allow")));
 	settings->setAttribute(QWebEngineSettings::ShowScrollBars, getOption(SettingsManager::Interface_ShowScrollBarsOption, url).toBool());
 	settings->setAttribute(QWebEngineSettings::WebGLEnabled, getOption(SettingsManager::Permissions_EnableWebglOption, url).toBool());
 	settings->setDefaultTextEncoding((encoding == QLatin1String("auto")) ? QString() : encoding);
-	m_page->runJavaScript(getImageCacheScript(imageOption == QLatin1String("onlyCached")));
+	const QString visibilityScript(getImageVisibilityScript(imageOption == QLatin1String("disabled")));
+	const QString scriptName(QLatin1String("otter-image-visibility"));
+	const QList<QWebEngineScript> existingScripts(m_page->scripts().toList());
+	for (const QWebEngineScript &script: existingScripts)
+	{
+		if (script.name() == scriptName)
+		{
+			m_page->scripts().remove(script);
+		}
+	}
+
+	if (imageOption == QLatin1String("disabled"))
+	{
+		QWebEngineScript script;
+		script.setName(scriptName);
+		script.setSourceCode(visibilityScript);
+		script.setWorldId(QWebEngineScript::ApplicationWorld);
+		script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+		script.setRunsOnSubFrames(true);
+		m_page->scripts().insert(script);
+	}
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	const auto applyToFrame = [&](const auto &self, QWebEngineFrame frame) -> void
+	{
+		if (!frame.isValid())
+		{
+			return;
+		}
+
+		frame.runJavaScript(visibilityScript, QWebEngineScript::ApplicationWorld);
+
+		for (const QWebEngineFrame &child: frame.children())
+		{
+			self(self, child);
+		}
+	};
+	applyToFrame(applyToFrame, m_page->mainFrame());
+#else
+	m_page->runJavaScript(visibilityScript, QWebEngineScript::ApplicationWorld);
+#endif
 
 	disconnect(m_page, &QtWebEnginePage::geometryChangeRequested, this, &QtWebEngineWebWidget::requestedGeometryChange);
 
@@ -1506,7 +1561,6 @@ void QtWebEngineWebWidget::updateOptions(const QUrl &url)
 		connect(m_page, &QtWebEnginePage::geometryChangeRequested, this, &QtWebEngineWebWidget::requestedGeometryChange);
 	}
 
-	m_requestInterceptor->updateOptions(url);
 }
 
 void QtWebEngineWebWidget::updateWatchedData(ChangeWatcher watcher)
@@ -2272,20 +2326,6 @@ bool QtWebEngineWebWidget::eventFilter(QObject *object, QEvent *event)
 			if (object == m_webView)
 			{
 				emit geometryChanged();
-			}
-
-			break;
-		case QEvent::KeyPress:
-			if (!m_isEditing)
-			{
-				const QKeyEvent *keyEvent(static_cast<QKeyEvent*>(event));
-
-				if (keyEvent->key() == Qt::Key_Space && (keyEvent->modifiers() == Qt::NoModifier || keyEvent->modifiers() == Qt::ShiftModifier))
-				{
-					m_page->runJavaScript(QStringLiteral("window.scrollBy(0, window.innerHeight * %1)").arg((keyEvent->modifiers() == Qt::ShiftModifier) ? -1 : 1));
-
-					return true;
-				}
 			}
 
 			break;

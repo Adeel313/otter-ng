@@ -499,6 +499,7 @@ QVector<GesturesManager::GesturesContext> GesturesManager::m_contexts;
 int GesturesManager::m_gesturesContextEnumerator(0);
 bool GesturesManager::m_isReleasing(false);
 bool GesturesManager::m_isAfterScroll(false);
+bool GesturesManager::m_isReplaying(false);
 
 GesturesManager::GesturesManager(QObject *parent) : QObject(parent),
 	m_reloadTimer(0)
@@ -697,6 +698,12 @@ void GesturesManager::releaseTrackedObject()
 
 void GesturesManager::endGesture()
 {
+	// This handles QObject::destroyed(), which is emitted before the weak reference
+	// behind the QPointer is cleared, so m_trackedObject still points to the object
+	// that is being destroyed. Drop it here, so that nothing uses it afterwards,
+	// neither by sending events to it nor by installing an event filter on it.
+	m_trackedObject = nullptr;
+
 	cancelGesture();
 }
 
@@ -854,7 +861,9 @@ bool GesturesManager::startGesture(QObject *object, QEvent *event, const QVector
 {
 	QInputEvent *inputEvent(static_cast<QInputEvent*>(event));
 
-	if (!object || !inputEvent || m_events.contains(inputEvent))
+	// Events replayed by triggerAction() are already recognised by the gesture handling and
+	// must reach the page untouched, otherwise a plain click would lose its press event.
+	if (!object || !inputEvent || m_isReplaying || m_events.contains(inputEvent))
 	{
 		return false;
 	}
@@ -935,10 +944,28 @@ bool GesturesManager::triggerAction(const MouseProfile::Gesture &gesture)
 
 	if (gesture.action == NATIVE_GESTURE)
 	{
-		for (QInputEvent *event: std::as_const(m_events))
+		// The replayed events are sent synchronously and may destroy the tracked object,
+		// which cancels the gesture and deletes every event kept in m_events.
+		// Take ownership of the copies here, so that a re-entrant cancelGesture() cannot
+		// free the events which are still being sent, and stop sending once it happens.
+		const QVector<QInputEvent*> events(m_events);
+
+		m_events.clear();
+		m_isReplaying = true;
+
+		for (QInputEvent *event: events)
 		{
+			if (!m_trackedObject)
+			{
+				break;
+			}
+
 			QCoreApplication::sendEvent(m_trackedObject, event);
 		}
+
+		m_isReplaying = false;
+
+		qDeleteAll(events);
 
 		cancelGesture();
 	}
@@ -1129,7 +1156,7 @@ bool GesturesManager::eventFilter(QObject *object, QEvent *event)
 
 				while (!m_events.isEmpty() && m_events.at(m_events.count() - 1)->type() == QEvent::Wheel)
 				{
-					m_events.removeAt(m_events.count() - 1);
+					delete m_events.takeLast();
 				}
 
 				m_isAfterScroll = true;

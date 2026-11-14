@@ -145,6 +145,7 @@ private:
 	static int m_gesturesContextEnumerator;
 	static bool m_isReleasing;
 	static bool m_isAfterScroll;
+	static bool m_isReplaying;
 };
 
 }

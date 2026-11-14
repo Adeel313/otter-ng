@@ -29,6 +29,7 @@
 #include "../core/NotesManager.h"
 #include "../core/SearchEnginesManager.h"
 #include "../core/SessionModel.h"
+#include "../core/SettingsManager.h"
 #include "../core/SessionsManager.h"
 #include "../core/ThemesManager.h"
 #include "../core/ToolBarsManager.h"
@@ -860,7 +861,7 @@ void Menu::populateBookmarkSelectorMenu()
 void Menu::populateOptionMenu()
 {
 	const MainWindow *mainWindow(MainWindow::findMainWindow(parent()));
-	const QString value(mainWindow ? mainWindow->getOption(m_option).toString() : QString());
+	const QString value(m_menuOptions.value(QLatin1String("global")).toBool() ? SettingsManager::getOption(m_option).toString() : (mainWindow ? mainWindow->getOption(m_option).toString() : QString()));
 
 	if (m_actionGroup)
 	{
@@ -1685,6 +1686,13 @@ void Menu::populateWindowsMenu()
 
 void Menu::selectOption(QAction *action)
 {
+	if (m_menuOptions.value(QLatin1String("global")).toBool())
+	{
+		SettingsManager::setOption(m_option, action->data().toString());
+
+		return;
+	}
+
 	MainWindow *mainWindow(MainWindow::findMainWindow(parent()));
 
 	if (mainWindow)

@@ -86,8 +86,14 @@ option(ALLOW_WITHOUT_WEB_BACKENDS "Allow to build without any web backends (buil
 option(ENABLE_QTWEBENGINE "Enable QtWebEngine backend (requires compatible version of Qt WebEngine)" ON)
 option(ENABLE_QTWEBKIT "Enable QtWebKit backend (requires QtWebKit 5.212)" ON)
 option(ENABLE_CRASH_REPORTS "Enable built-in crash reporting (official builds only)" OFF)
+option(ENABLE_CRASH_DUMPS "Save local crash dumps for debugging" ON)
 option(ENABLE_DBUS "Enable D-Bus based integration for notifications (only freedesktop.org compatible platforms)" ON)
 option(ENABLE_SPELLCHECK "Enable Hunspell based spell checking" ON)
+
+if (ENABLE_CRASH_DUMPS AND NOT WIN32 AND NOT CMAKE_SYSTEM_NAME MATCHES "Linux")
+	message(STATUS "Local crash dumps are supported only on Windows and Linux; disabling ENABLE_CRASH_DUMPS")
+	set(ENABLE_CRASH_DUMPS OFF)
+endif ()
 
 find_package(Hunspell 1.5.0 QUIET)
 
@@ -107,6 +113,7 @@ set(OTTER_SOURCES
 	src/core/CookieJar.cpp
 	src/core/DataExchanger.cpp
 	src/core/FeedParser.cpp
+	src/core/FormFillerManager.cpp
 	src/core/FeedsManager.cpp
 	src/core/FeedsModel.cpp
 	src/core/GesturesController.cpp
@@ -249,6 +256,7 @@ set(OTTER_SOURCES
 	src/modules/widgets/configurationOption/ConfigurationOptionWidget.cpp
 	src/modules/widgets/contentBlockingInformation/ContentBlockingInformationWidget.cpp
 	src/modules/widgets/errorConsole/ErrorConsoleWidget.cpp
+	src/modules/widgets/imageOptions/ImageOptionsWidget.cpp
 	src/modules/widgets/menuButton/MenuButtonWidget.cpp
 	src/modules/widgets/panelChooser/PanelChooserWidget.cpp
 	src/modules/widgets/privateWindowIndicator/PrivateWindowIndicatorWidget.cpp
@@ -276,6 +284,7 @@ set(OTTER_SOURCES
 	src/modules/windows/passwords/PasswordsContentsWidget.cpp
 	src/modules/windows/preferences/AdvancedPreferencesPage.cpp
 	src/modules/windows/preferences/ContentPreferencesPage.cpp
+	src/modules/windows/preferences/FormFillerPreferencesPage.cpp
 	src/modules/windows/preferences/GeneralPreferencesPage.cpp
 	src/modules/windows/preferences/InputPreferencesPage.cpp
 	src/modules/windows/preferences/PreferencesContentsWidget.cpp
@@ -394,8 +403,27 @@ if (ENABLE_QTWEBKIT)
 	include(src/modules/backends/web/qtwebkit/CMakeLists.txt)
 endif ()
 
-if (ENABLE_CRASH_REPORTS)
-	add_definitions(-DOTTER_ENABLE_CRASH_REPORTS)
+if (ENABLE_CRASH_REPORTS OR ENABLE_CRASH_DUMPS)
+	add_definitions(-DOTTER_ENABLE_CRASH_DUMPS)
+	if (ENABLE_CRASH_REPORTS)
+		add_definitions(-DOTTER_ENABLE_CRASH_REPORTS)
+	endif ()
+	execute_process(COMMAND git rev-parse --short=12 HEAD WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE OTTER_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	if (NOT OTTER_GIT_COMMIT)
+		set(OTTER_GIT_COMMIT "unknown")
+	endif ()
+	if (NOT CMAKE_BUILD_TYPE)
+		set(OTTER_BUILD_TYPE "unspecified")
+	else ()
+		set(OTTER_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+	endif ()
+	execute_process(COMMAND git status --porcelain WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} OUTPUT_VARIABLE OTTER_GIT_STATUS OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+	if (OTTER_GIT_STATUS)
+		set(OTTER_SOURCE_DIRTY "true")
+	else ()
+		set(OTTER_SOURCE_DIRTY "false")
+	endif ()
+	add_definitions(-DOTTER_GIT_COMMIT="${OTTER_GIT_COMMIT}" -DOTTER_BUILD_TYPE="${OTTER_BUILD_TYPE}" -DOTTER_COMPILER="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}" -DOTTER_SOURCE_DIRTY=${OTTER_SOURCE_DIRTY})
 	include_directories(${CMAKE_SOURCE_DIR}/3rdparty/breakpad/src/)
 
 	if (WIN32)
@@ -603,7 +631,7 @@ elseif (UNIX)
 		target_link_libraries(otter-browser ${QT_VERSION}::DBus)
 	endif ()
 
-	if (ENABLE_CRASH_REPORTS)
+	if (ENABLE_CRASH_REPORTS OR ENABLE_CRASH_DUMPS)
 		target_link_libraries(otter-browser -lpthread)
 	endif ()
 endif ()

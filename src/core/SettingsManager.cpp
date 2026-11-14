@@ -79,6 +79,8 @@ void SettingsManager::createInstance(const QString &path)
 	registerOption(Browser_EnableSingleKeyShortcutsOption, BooleanType, true);
 	registerOption(Browser_EnableSpellCheckOption, BooleanType, true);
 	registerOption(Browser_EnableTrayIconOption, BooleanType, true);
+	registerOption(Browser_EnableFormFillerOption, BooleanType, true);
+	registerOption(Browser_FormDataOption, StringType, QString());
 	registerOption(Browser_HomePageOption, StringType, QString());
 	registerOption(Browser_InactiveTabTimeUntilSuspendOption, IntegerType, -1);
 	registerOption(Browser_KeyboardShortcutsProfilesOrderOption, ListType, QStringList(QLatin1String("default")));

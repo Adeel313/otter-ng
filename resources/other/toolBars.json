@@ -91,6 +91,13 @@
 				}
 			},
 			"StatusMessageWidget",
+			{
+				"identifier": "ImageOptionsWidget",
+				"options":
+				{
+					"buttonStyle": "textBesideIcon"
+				}
+			},
 			"ZoomOutAction",
 			"ZoomWidget",
 			"ZoomInAction",

@@ -58,6 +58,8 @@ public:
 		Browser_EnableSingleKeyShortcutsOption,
 		Browser_EnableSpellCheckOption,
 		Browser_EnableTrayIconOption,
+		Browser_EnableFormFillerOption,
+		Browser_FormDataOption,
 		Browser_HomePageOption,
 		Browser_InactiveTabTimeUntilSuspendOption,
 		Browser_KeyboardShortcutsProfilesOrderOption,

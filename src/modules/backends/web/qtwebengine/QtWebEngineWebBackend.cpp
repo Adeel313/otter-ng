@@ -193,13 +193,14 @@ void QtWebEngineWebBackend::handleOptionChanged(int identifier)
 	}
 	else if (optionName.startsWith(QLatin1String("Permissions/")))
 	{
-		settings->setAttribute(QWebEngineSettings::AutoLoadImages, (SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption).toString() != QLatin1String("disabled")));
+		settings->setAttribute(QWebEngineSettings::AutoLoadImages, (SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption).toString() == QLatin1String("enabled")));
 		settings->setAttribute(QWebEngineSettings::PluginsEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnablePluginsOption).toString() != QLatin1String("disabled"));
 		settings->setAttribute(QWebEngineSettings::JavascriptEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnableJavaScriptOption).toBool());
 		settings->setAttribute(QWebEngineSettings::JavascriptCanAccessClipboard, SettingsManager::getOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption).toBool());
 		settings->setAttribute(QWebEngineSettings::JavascriptCanOpenWindows, (SettingsManager::getOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption).toString() != QLatin1String("blockAll")));
 		settings->setAttribute(QWebEngineSettings::WebGLEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnableWebglOption).toBool());
 		settings->setAttribute(QWebEngineSettings::LocalStorageEnabled, SettingsManager::getOption(SettingsManager::Permissions_EnableLocalStorageOption).toBool());
+		settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, (SettingsManager::getOption(SettingsManager::Permissions_EnableMediaPlaybackAudioOption).toString() != QLatin1String("allow")));
 	}
 }
 
@@ -260,6 +261,7 @@ QWebEngineProfile* QtWebEngineWebBackend::getDefaultProfile()
 		settings->setAttribute(QWebEngineSettings::XSSAuditingEnabled, true);
 		settings->setAttribute(QWebEngineSettings::PrintElementBackgrounds, SettingsManager::getOption(SettingsManager::Browser_PrintElementBackgroundsOption).toBool());
 		settings->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, SettingsManager::getOption(SettingsManager::Interface_EnableSmoothScrollingOption).toBool());
+		settings->setAttribute(QWebEngineSettings::PlaybackRequiresUserGesture, (SettingsManager::getOption(SettingsManager::Permissions_EnableMediaPlaybackAudioOption).toString() != QLatin1String("allow")));
 
 		const QString cachePath(SessionsManager::getCachePath());
 

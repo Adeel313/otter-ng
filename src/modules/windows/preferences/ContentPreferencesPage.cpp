@@ -272,7 +272,7 @@ void ContentPreferencesPage::load()
 
 	updateStyle();
 
-	connect(m_ui->manageContentBlockingButton, &QPushButton::clicked, this,[&]()
+	connect(m_ui->manageContentBlockingButton, &QPushButton::clicked, this, [this]()
 	{
 		const QUrl url(QLatin1String("about:content-filters"));
 

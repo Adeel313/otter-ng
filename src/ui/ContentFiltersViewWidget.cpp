@@ -26,6 +26,8 @@
 #include "../core/Utils.h"
 
 #include <QtCore/QFileInfo>
+#include <QtCore/QPersistentModelIndex>
+#include <QtCore/QPointer>
 #include <QtCore/QTimer>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QFileDialog>
@@ -644,36 +646,58 @@ void ContentFiltersViewWidget::handleProfileAdded(const QString &name)
 
 void ContentFiltersViewWidget::handleProfileModified(const QString &name)
 {
-	const ContentFiltersProfile *profile(ContentFiltersManager::getProfile(name));
+	ContentFiltersProfile *profile(ContentFiltersManager::getProfile(name));
 
 	if (!profile)
 	{
 		return;
 	}
 
-	QStandardItem *entryItem(nullptr);
+	QPersistentModelIndex entryIndex;
 
 	for (int i = 0; i < getRowCount(); ++i)
 	{
-		const QModelIndex categoryIndex(getIndex(i));
+		const QPersistentModelIndex categoryIndex(getIndex(i));
 		bool hasFound(false);
 
 		for (int j = 0; j < getRowCount(categoryIndex); ++j)
 		{
-			const QModelIndex entryIndex(getIndex(j, 0, categoryIndex));
+			const QPersistentModelIndex candidateIndex(getIndex(j, 0, categoryIndex));
 
-			if (entryIndex.data(NameRole).toString() == name)
+			if (candidateIndex.isValid() && candidateIndex.data(NameRole).toString() == name)
 			{
-				entryItem = m_model->itemFromIndex(entryIndex);
+				entryIndex = candidateIndex;
 				hasFound = true;
 
-				setData(entryIndex.sibling(j, 2), Utils::formatDateTime(profile->getLastUpdate()), Qt::DisplayRole);
+				setData(entryIndex.sibling(entryIndex.row(), 2), Utils::formatDateTime(profile->getLastUpdate()), Qt::DisplayRole);
+
+				if (!entryIndex.isValid())
+				{
+					return;
+				}
 
 				if (!entryIndex.data(IsModifiedRole).toBool())
 				{
 					setData(entryIndex, profile->getTitle(), TitleRole);
+
+					if (!entryIndex.isValid())
+					{
+						return;
+					}
+
 					setData(entryIndex, createLanguagesList(profile), LanguagesRole);
-					setData(entryIndex.sibling(j, 1), profile->getUpdateInterval(), Qt::DisplayRole);
+
+					if (!entryIndex.isValid())
+					{
+						return;
+					}
+
+					setData(entryIndex.sibling(entryIndex.row(), 1), profile->getUpdateInterval(), Qt::DisplayRole);
+
+					if (!entryIndex.isValid())
+					{
+						return;
+					}
 				}
 
 				break;
@@ -686,51 +710,98 @@ void ContentFiltersViewWidget::handleProfileModified(const QString &name)
 		}
 	}
 
-	if (entryItem)
+	if (entryIndex.isValid())
 	{
 		const bool hasError(profile->getError() != ContentFiltersProfile::NoError);
 
-		entryItem->setData(hasError, HasErrorRole);
-		entryItem->setData(profile->getLastUpdate(), UpdateTimeRole);
+		setData(entryIndex, hasError, HasErrorRole);
 
-		if (profile->isUpdating() != entryItem->data(IsUpdatingRole).toBool())
+		if (!entryIndex.isValid())
 		{
-			entryItem->setData(profile->isUpdating(), IsUpdatingRole);
+			return;
+		}
+
+		setData(entryIndex, profile->getLastUpdate(), UpdateTimeRole);
+
+		if (!entryIndex.isValid())
+		{
+			return;
+		}
+
+		if (profile->isUpdating() != entryIndex.data(IsUpdatingRole).toBool())
+		{
+			setData(entryIndex, profile->isUpdating(), IsUpdatingRole);
+
+			if (!entryIndex.isValid())
+			{
+				return;
+			}
 
 			if (profile->isUpdating())
 			{
-				entryItem->setData(true, IsShowingProgressIndicatorRole);
+				setData(entryIndex, true, IsShowingProgressIndicatorRole);
 
-				connect(profile, &ContentFiltersProfile::updateProgressChanged, profile, [=](int progress)
+				if (!entryIndex.isValid())
 				{
-					entryItem->setData(((progress < 0 && entryItem->data(HasErrorRole).toBool()) ? 0 : progress), UpdateProgressValueRole);
+					return;
+				}
+
+				const QPersistentModelIndex progressIndex(entryIndex);
+				const QPointer<ContentFiltersProfile> profilePointer(profile);
+
+				connect(profile, &ContentFiltersProfile::updateProgressChanged, this, [this, profilePointer, progressIndex](int progress)
+				{
+					if (profilePointer && progressIndex.isValid())
+					{
+						setData(progressIndex, ((progress < 0 && progressIndex.data(HasErrorRole).toBool()) ? 0 : progress), UpdateProgressValueRole);
+					}
 				});
 			}
 			else
 			{
-				if (entryItem->data(UpdateProgressValueRole).toInt() < 0)
+				if (entryIndex.data(UpdateProgressValueRole).toInt() < 0)
 				{
-					entryItem->setData((hasError ? 0 : 100), UpdateProgressValueRole);
+					setData(entryIndex, (hasError ? 0 : 100), UpdateProgressValueRole);
+
+					if (!entryIndex.isValid())
+					{
+						return;
+					}
 				}
 
-				const QModelIndex entryIndex(entryItem->index());
 				const QHash<AdblockContentFiltersProfile::RuleType, quint32> information(getRulesInformation(getProfileSummary(entryIndex), getProfilePath(entryIndex)));
 
 				m_model->setData(entryIndex.sibling(entryIndex.row(), 3), QString::number(information.value(AdblockContentFiltersProfile::ActiveRule)), Qt::DisplayRole);
+
+				if (!entryIndex.isValid())
+				{
+					return;
+				}
+
 				m_model->setData(entryIndex.sibling(entryIndex.row(), 4), QString::number(information.value(AdblockContentFiltersProfile::AnyRule)), Qt::DisplayRole);
 
-				QTimer::singleShot(2500, this, [=]()
+				const QPersistentModelIndex updateIndex(entryIndex);
+				const QPointer<ContentFiltersProfile> profilePointer(profile);
+
+				QTimer::singleShot(2500, this, [this, profilePointer, updateIndex]()
 				{
-					if (!profile->isUpdating())
+					if (profilePointer && !profilePointer->isUpdating() && updateIndex.isValid())
 					{
-						entryItem->setData(false, IsShowingProgressIndicatorRole);
+						setData(updateIndex, false, IsShowingProgressIndicatorRole);
 					}
 				});
 			}
 		}
 
-		if (!entryItem->data(IsModifiedRole).toBool())
+		if (entryIndex.isValid() && !entryIndex.data(IsModifiedRole).toBool())
 		{
+			QStandardItem *entryItem(m_model->itemFromIndex(entryIndex));
+
+			if (!entryItem)
+			{
+				return;
+			}
+
 			QStandardItem *currentCategoryItem(entryItem->parent());
 
 			if (currentCategoryItem && profile->getCategory() != currentCategoryItem->data(CategoryRole).toInt())

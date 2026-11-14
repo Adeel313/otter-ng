@@ -11,3 +11,11 @@ debug
 *.user
 .kde4
 *.kde4
+
+# Local build and runtime output
+.debug/
+.qt/
+build-qt612/
+webengine-bin*/
+wetest/formtest*
+wetest/wetest

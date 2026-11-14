@@ -32,6 +32,8 @@
 #include <QtWebEngineCore/QWebEnginePage>
 #endif
 
+class QCompleter;
+
 namespace Otter
 {
 
@@ -57,6 +59,7 @@ public:
 	QtWebEnginePage(QWebEngineProfile *profile, QtWebEngineWebWidget *parent);
 
 	void setHistory(const Session::Window::History &history);
+	void detachWidget();
 	QtWebEngineWebWidget* getWebWidget() const;
 	QString createScriptSource(const QString &path, const QStringList &parameters = {}) const;
 	QVariant runScriptSource(const QString &script);
@@ -76,6 +79,7 @@ protected:
 	QStringList chooseFiles(FileSelectionMode mode, const QStringList &oldFiles, const QStringList &acceptedMimeTypes) override;
 	bool acceptNavigationRequest(const QUrl &url, NavigationType type, bool isMainFrame) override;
 	bool shouldAcceptCertificate(const QWebEngineCertificateError &error);
+	void probeSslInformation(const QUrl &url);
 #if defined(USE_QT5)
 	bool certificateError(const QWebEngineCertificateError &error) override;
 #endif
@@ -87,12 +91,14 @@ protected slots:
 
 private:
 	QtWebEngineWebWidget *m_widget;
+	QCompleter *m_formCompleter;
 	WebWidget::SslInformation m_sslInformation;
 	QVector<QtWebEnginePage*> m_popups;
 	QVector<HistoryEntryInformation> m_history;
 	NavigationType m_previousNavigationType;
 	QString m_editingStateMessageToken;
 	QString m_passwordMessageToken;
+	QString m_formDataMessageToken;
 	bool m_isIgnoringJavaScriptPopups;
 	bool m_isViewingMedia;
 	bool m_isPopup;

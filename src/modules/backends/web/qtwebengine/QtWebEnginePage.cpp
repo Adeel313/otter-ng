@@ -21,6 +21,7 @@
 #include "QtWebEnginePage.h"
 #include "QtWebEngineWebBackend.h"
 #include "QtWebEngineWebWidget.h"
+#include "../../../../core/FormFillerManager.h"
 #include "../../../../core/Console.h"
 #include "../../../../core/ContentFiltersManager.h"
 #include "../../../../core/HandlersManager.h"
@@ -37,8 +38,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtCore/QRegularExpression>
 #include <QtCore/QUuid>
+#include <QtNetwork/QSslSocket>
 #if defined(USE_QT5)
 #include <QtWebEngineWidgets/QWebEngineHistory>
 #include <QtWebEngineWidgets/QWebEngineProfile>
@@ -53,9 +54,44 @@
 #include <QtWebEngineCore/QWebEngineSettings>
 #endif
 #include <QtWidgets/QMessageBox>
+#include <QtCore/QStringListModel>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QAbstractItemView>
+#include <QtWidgets/QCompleter>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QtWebEngineCore/QWebEngineFrame>
+#endif
 
 namespace Otter
 {
+
+namespace
+{
+
+bool hasFormFrameUrl(QWebEnginePage *page, const QUrl &url)
+{
+	if (url.host().isEmpty() || (url.scheme() != QLatin1String("http") && url.scheme() != QLatin1String("https")))
+	{
+		return false;
+	}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	QList<QWebEngineFrame> frames({page->mainFrame()});
+	while (!frames.isEmpty())
+	{
+		const QWebEngineFrame frame(frames.takeLast());
+		if (frame.url() == url)
+		{
+			return true;
+		}
+		frames.append(frame.children());
+	}
+	return false;
+#else
+	return page->url() == url;
+#endif
+}
+
+}
 
 QtWebEnginePage::QtWebEnginePage(bool isPrivate, QtWebEngineWebWidget *parent) : QtWebEnginePage((isPrivate ? new QWebEngineProfile(parent) : qobject_cast<QtWebEngineWebBackend*>(parent->getBackend())->getDefaultProfile()), parent)
 {
@@ -67,14 +103,44 @@ QtWebEnginePage::QtWebEnginePage(bool isPrivate, QtWebEngineWebWidget *parent) :
 
 QtWebEnginePage::QtWebEnginePage(QWebEngineProfile *profile, QtWebEngineWebWidget *parent) : QWebEnginePage(profile, parent),
 	m_widget(parent),
+	m_formCompleter(nullptr),
 	m_previousNavigationType(QtWebEnginePage::NavigationTypeOther),
 	m_editingStateMessageToken(QUuid::createUuid().toString(QUuid::WithoutBraces)),
 	m_passwordMessageToken(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+	m_formDataMessageToken(QUuid::createUuid().toString(QUuid::WithoutBraces)),
 	m_isIgnoringJavaScriptPopups(false),
 	m_isViewingMedia(false),
 	m_isPopup(false)
 {
 	connect(this, &QtWebEnginePage::loadFinished, this, &QtWebEnginePage::handleLoadFinished);
+
+	if (!profile->isOffTheRecord())
+	{
+		QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/formData.js"));
+		if (file.open(QIODevice::ReadOnly))
+		{
+			QWebEngineScript script;
+			script.setName(QLatin1String("otter-form-data"));
+			script.setSourceCode(QString::fromUtf8(file.readAll()).arg(m_formDataMessageToken));
+			script.setInjectionPoint(QWebEngineScript::DocumentReady);
+			script.setWorldId(QWebEngineScript::UserWorld);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+			script.setRunsOnSubFrames(true);
+#else
+			script.setRunsOnSubFrames(false);
+#endif
+			scripts().insert(script);
+		}
+	}
+
+	connect(this, &QtWebEnginePage::loadStarted, this, [this]()
+	{
+		if (m_formCompleter)
+		{
+			m_formCompleter->popup()->hide();
+			disconnect(m_formCompleter, nullptr, this, nullptr);
+		}
+	});
 
 #if !defined(USE_QT5)
 	connect(this, &QWebEnginePage::certificateError, this, [this](QWebEngineCertificateError error)
@@ -127,6 +193,116 @@ void QtWebEnginePage::javaScriptAlert(const QUrl &url, const QString &message)
 
 void QtWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel level, const QString &note, int line, const QString &source)
 {
+	const bool debugForms(qEnvironmentVariableIsSet("OTTER_FORM_DEBUG"));
+	const QString formDataMessagePrefix(QLatin1String("otter-form-"));
+	const QString formDataToken(QLatin1Char(':') + m_formDataMessageToken + QLatin1Char(':'));
+
+	if (note.startsWith(formDataMessagePrefix + QLatin1String("ready") + formDataToken))
+	{
+		if (debugForms) qInfo() << "Form filler: capture script ready";
+		return;
+	}
+
+	if (note.startsWith(formDataMessagePrefix + QLatin1String("save") + formDataToken))
+	{
+		if (m_widget && !m_widget->isPrivate())
+		{
+			const QByteArray encoded(note.mid((formDataMessagePrefix + QLatin1String("save") + formDataToken).length()).toLatin1());
+			QJsonParseError parseError;
+			const QJsonDocument document(QJsonDocument::fromJson(QByteArray::fromBase64(encoded), &parseError));
+			const QUrl pageUrl(document.object().value(QLatin1String("url")).toString());
+
+			if (parseError.error == QJsonParseError::NoError && hasFormFrameUrl(this, pageUrl))
+			{
+				for (const QJsonValue &fieldValue: document.object().value(QLatin1String("fields")).toArray())
+				{
+					const QJsonObject field(fieldValue.toObject());
+					FormFillerManager::addValue(pageUrl, field.value(QLatin1String("name")).toString(), field.value(QLatin1String("autocomplete")).toString(), field.value(QLatin1String("value")).toString());
+				}
+			}
+		}
+
+		return;
+	}
+
+	if (note.startsWith(formDataMessagePrefix + QLatin1String("suggest") + formDataToken))
+	{
+		if (m_widget && !m_widget->isPrivate())
+		{
+			const QByteArray encoded(note.mid((formDataMessagePrefix + QLatin1String("suggest") + formDataToken).length()).toLatin1());
+			QJsonParseError parseError;
+			const QJsonDocument document(QJsonDocument::fromJson(QByteArray::fromBase64(encoded), &parseError));
+			const QJsonObject field(document.object());
+			const QUrl frameUrl(field.value(QLatin1String("url")).toString());
+			if (debugForms) qInfo() << "Form filler: suggestion received; frame accepted:" << hasFormFrameUrl(this, frameUrl);
+			const QString fieldName(field.value(QLatin1String("name")).toString());
+			const QString autocomplete(field.value(QLatin1String("autocomplete")).toString());
+			const QString prefix(field.value(QLatin1String("value")).toString());
+			const QRect fieldRectangle(qRound(field.value(QLatin1String("x")).toDouble()), qRound(field.value(QLatin1String("y")).toDouble()), qRound(field.value(QLatin1String("width")).toDouble()), qRound(field.value(QLatin1String("height")).toDouble()));
+
+			if (parseError.error == QJsonParseError::NoError && hasFormFrameUrl(this, frameUrl) && !fieldName.isEmpty() && fieldName.size() <= 256 && prefix.size() < 256 && fieldRectangle.isValid() && fieldRectangle.width() < 2000 && fieldRectangle.height() < 500)
+			{
+				QStringList values;
+				for (const QString &value: FormFillerManager::getValues(frameUrl, fieldName, autocomplete))
+				{
+					if (value.startsWith(prefix, Qt::CaseInsensitive) && value.compare(prefix, Qt::CaseInsensitive) != 0)
+					{
+						values.append(value);
+					}
+				}
+
+				if (m_formCompleter)
+				{
+					m_formCompleter->popup()->hide();
+					disconnect(m_formCompleter, nullptr, this, nullptr);
+				}
+
+				QWidget *editor(QApplication::focusWidget());
+				if (debugForms) qInfo() << "Form filler: matching values:" << values.size() << "focus present:" << bool(editor) << "focus belongs to page:" << bool(editor && (editor == m_widget || m_widget->isAncestorOf(editor)));
+				if (!values.isEmpty() && editor && (editor == m_widget || m_widget->isAncestorOf(editor)))
+				{
+					if (!m_formCompleter)
+					{
+						m_formCompleter = new QCompleter(this);
+						m_formCompleter->setModel(new QStringListModel(m_formCompleter));
+						m_formCompleter->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+					}
+					m_formCompleter->setWidget(editor);
+					m_formCompleter->setCompletionPrefix(QString());
+					static_cast<QStringListModel*>(m_formCompleter->model())->setStringList(values);
+					connect(m_formCompleter, QOverload<const QString&>::of(&QCompleter::activated), this, [this, frameUrl, fieldName, autocomplete, prefix](const QString &value)
+					{
+						QJsonArray arguments;
+						arguments.append(fieldName);
+						arguments.append(prefix);
+						arguments.append(value);
+						arguments.append(autocomplete.section(QLatin1Char(' '), -1));
+						const QString valuesJson(QString::fromUtf8(QJsonDocument(arguments).toJson(QJsonDocument::Compact)));
+						const QString script(QStringLiteral("(function(a){const field=document.activeElement;if(!document.hasFocus()||!field||!['INPUT','TEXTAREA','SELECT'].includes(field.tagName)||((field.name||field.id||field.getAttribute('aria-label')||field.getAttribute('placeholder')||a[3]||'').trim()!==a[0])||field.value!==a[1])return;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field),'value').set;setter.call(field,a[2]);field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));})(%1);").arg(valuesJson));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+						QList<QWebEngineFrame> frames({mainFrame()});
+						while (!frames.isEmpty())
+						{
+							QWebEngineFrame frame(frames.takeLast());
+							if (frame.url() == frameUrl)
+							{
+								frame.runJavaScript(script);
+							}
+							frames.append(frame.children());
+						}
+#else
+						runJavaScript(script);
+#endif
+					});
+					const QRect popupRectangle(editor->mapFrom(m_widget, fieldRectangle.topLeft()), fieldRectangle.size());
+					m_formCompleter->complete(popupRectangle);
+				}
+			}
+		}
+
+		return;
+	}
+
 	const QString editingStateMessagePrefix(QLatin1String("otter-editing:") + m_editingStateMessageToken + QLatin1Char(':'));
 
 	if (note.startsWith(editingStateMessagePrefix))
@@ -216,9 +392,38 @@ void QtWebEnginePage::javaScriptConsoleMessage(JavaScriptConsoleMessageLevel lev
 	Console::addMessage(note, Console::JavaScriptCategory, mappedLevel, source, line, (m_widget ? m_widget->getWindowIdentifier() : 0));
 }
 
+void QtWebEnginePage::probeSslInformation(const QUrl &url)
+{
+	QSslSocket *socket(new QSslSocket(this));
+	socket->setPeerVerifyMode(QSslSocket::VerifyNone);
+
+	connect(socket, &QSslSocket::encrypted, this, [this, socket, url]()
+	{
+		if (this->url() == url)
+		{
+			m_sslInformation.certificates = socket->peerCertificateChain().toVector();
+			m_sslInformation.cipher = socket->sessionCipher();
+		}
+
+		socket->disconnectFromHost();
+		socket->deleteLater();
+	});
+	connect(socket, &QSslSocket::errorOccurred, this, [socket](QAbstractSocket::SocketError)
+	{
+		socket->deleteLater();
+	});
+
+	socket->connectToHostEncrypted(url.host(), url.port(443));
+}
+
 void QtWebEnginePage::handleLoadFinished()
 {
 	m_isIgnoringJavaScriptPopups = false;
+
+	if (url().scheme() == QLatin1String("https") && m_sslInformation.errors.isEmpty())
+	{
+		probeSslInformation(url());
+	}
 
 	runJavaScript(QStringLiteral(R"JS((function()
 	{
@@ -279,47 +484,62 @@ void QtWebEnginePage::handleLoadFinished()
 		m_history[historyIndex] = entry;
 	}
 
-	toHtml([&](const QString &result)
+	if (m_widget)
 	{
-		if (m_widget)
+		const QUrl url(m_widget->getUrl());
+		const ContentFiltersManager::CosmeticFiltersResult cosmeticFilters(ContentFiltersManager::getCosmeticFilters(ContentFiltersManager::getProfileIdentifiers(m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList()), url));
+
+		if (!cosmeticFilters.rules.isEmpty() || !cosmeticFilters.exceptions.isEmpty())
 		{
-			const QUrl url(m_widget->getUrl());
-			const ContentFiltersManager::CosmeticFiltersResult cosmeticFilters(ContentFiltersManager::getCosmeticFilters(ContentFiltersManager::getProfileIdentifiers(m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList()), url));
+			QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/hideElements.js"));
 
-			if (!cosmeticFilters.rules.isEmpty() || !cosmeticFilters.exceptions.isEmpty())
+			if (file.open(QIODevice::ReadOnly))
 			{
-				QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/hideElements.js"));
+				runJavaScript(QString::fromLatin1(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)));
 
-				if (file.open(QIODevice::ReadOnly))
-				{
-					runJavaScript(QString::fromLatin1(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)));
-
-					file.close();
-				}
-			}
-
-			const QStringList blockedRequests(m_widget->getBlockedElements());
-
-			if (!blockedRequests.isEmpty())
-			{
-				QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/hideBlockedRequests.js"));
-
-				if (file.open(QIODevice::ReadOnly))
-				{
-					runJavaScript(QString::fromLatin1(file.readAll()).arg(createJavaScriptList(blockedRequests)));
-
-					file.close();
-				}
+				file.close();
 			}
 		}
 
-		QString string(url().toString());
-		string.truncate(1000);
+		const QStringList blockedRequests(m_widget->getBlockedElements());
 
-		const QRegularExpressionMatch match(QRegularExpression(QLatin1String(R"(>(<img style="user-select: none;(?: cursor: zoom-in;)?"|<video controls="" autoplay="" name="media"><source) src=")") + QRegularExpression::escape(string)).match(result));
-		const bool isViewingMedia(match.hasMatch());
+		if (!blockedRequests.isEmpty())
+		{
+			QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/hideBlockedRequests.js"));
 
-		if (isViewingMedia && match.captured().startsWith(QLatin1String("><img")))
+			if (file.open(QIODevice::ReadOnly))
+			{
+				runJavaScript(QString::fromLatin1(file.readAll()).arg(createJavaScriptList(blockedRequests)));
+
+				file.close();
+			}
+		}
+	}
+
+	runJavaScript(QStringLiteral(R"JS((function()
+	{
+		const url = location.href;
+		const image = document.querySelector('img[style*="user-select: none"]');
+
+		if (image && image.src === url)
+		{
+			return 'img';
+		}
+
+		const source = document.querySelector('video[name="media"] > source, video[controls][autoplay] > source');
+
+		if (source && source.src === url)
+		{
+			return 'video';
+		}
+
+		return '';
+	})())JS"), [this](const QVariant &result)
+	{
+		const QString kind(result.toString());
+		const bool isViewingMedia(!kind.isEmpty());
+
+		if (kind == QLatin1String("img"))
 		{
 			settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
 			settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
@@ -398,6 +618,11 @@ void QtWebEnginePage::setHistory(const Session::Window::History &history)
 QtWebEngineWebWidget* QtWebEnginePage::getWebWidget() const
 {
 	return m_widget;
+}
+
+void QtWebEnginePage::detachWidget()
+{
+	m_widget = nullptr;
 }
 
 QWebEnginePage* QtWebEnginePage::createWindow(WebWindowType type)
@@ -724,11 +949,12 @@ bool QtWebEnginePage::acceptNavigationRequest(const QUrl &url, NavigationType ty
 		scripts().remove(script);
 	}
 
-	if (m_widget && m_widget->getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() == QLatin1String("onlyCached"))
+	if (m_widget && m_widget->getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() == QLatin1String("disabled"))
 	{
 		QWebEngineScript imageVisibilityScript;
-		imageVisibilityScript.setName(QLatin1String("otter-image-cache"));
-		imageVisibilityScript.setSourceCode(m_widget->getImageCacheScript(true));
+		imageVisibilityScript.setName(QLatin1String("otter-image-visibility"));
+		imageVisibilityScript.setSourceCode(m_widget->getImageVisibilityScript(true));
+		imageVisibilityScript.setWorldId(QWebEngineScript::ApplicationWorld);
 		imageVisibilityScript.setInjectionPoint(QWebEngineScript::DocumentCreation);
 		imageVisibilityScript.setRunsOnSubFrames(true);
 

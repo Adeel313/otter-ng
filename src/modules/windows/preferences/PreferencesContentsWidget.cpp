@@ -20,6 +20,7 @@
 #include "PreferencesContentsWidget.h"
 #include "AdvancedPreferencesPage.h"
 #include "ContentPreferencesPage.h"
+#include "FormFillerPreferencesPage.h"
 #include "GeneralPreferencesPage.h"
 #include "InputPreferencesPage.h"
 #include "PrivacyPreferencesPage.h"
@@ -44,6 +45,7 @@ PreferencesContentsWidget::PreferencesContentsWidget(const QVariantMap &paramete
 	addPage(new ContentPreferencesPage(this));
 	addPage(new PrivacyPreferencesPage(this));
 	addPage(new SearchPreferencesPage(this));
+	addPage(new FormFillerPreferencesPage(this));
 	addPage(new InputPreferencesPage(this));
 	addPage(new WebsitesPreferencesPage(this));
 	addPage(new AdvancedPreferencesPage(this));

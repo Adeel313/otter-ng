@@ -18,6 +18,7 @@
 **************************************************************************/
 
 #include "ClearHistoryDialog.h"
+#include "../core/FormFillerManager.h"
 #include "../core/HistoryManager.h"
 #include "../core/NetworkManagerFactory.h"
 #include "../core/PasswordsManager.h"
@@ -112,6 +113,11 @@ void ClearHistoryDialog::clearHistory()
 	if (m_ui->clearPasswordsCheckBox->isChecked())
 	{
 		PasswordsManager::clearPasswords(m_ui->periodSpinBox->value());
+	}
+
+	if (m_ui->clearFormsHistoryCheckBox->isChecked())
+	{
+		FormFillerManager::clear();
 	}
 
 	SettingsManager::setOption(SettingsManager::History_ManualClearOptionsOption, getClearSettings());

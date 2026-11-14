@@ -23,7 +23,7 @@
 #include "core/SettingsManager.h"
 #include "ui/MainWindow.h"
 #include "ui/StartupDialog.h"
-#ifdef OTTER_ENABLE_CRASH_REPORTS
+#ifdef OTTER_ENABLE_CRASH_DUMPS
 #ifdef Q_OS_WIN32
 #include "../3rdparty/breakpad/src/client/windows/handler/exception_handler.h"
 #elif defined(Q_OS_LINUX)
@@ -31,8 +31,15 @@
 #endif
 
 #include <QtCore/QDir>
-#include <QtCore/QProcess>
+#include <QtCore/QDateTime>
+#include <QtCore/QFile>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QSysInfo>
+#ifdef OTTER_ENABLE_CRASH_REPORTS
+#include <QtCore/QProcess>
+#endif
 #endif
 #include <QtCore/QUrl>
 #if defined(Q_OS_LINUX)
@@ -59,7 +66,7 @@ void otterMessageHander(QtMsgType type, const QMessageLogContext &context, const
 }
 #endif
 
-#ifdef OTTER_ENABLE_CRASH_REPORTS
+#ifdef OTTER_ENABLE_CRASH_DUMPS
 #ifdef Q_OS_WIN32
 bool otterCrashDumpHandler(const wchar_t *dumpDirectory, const wchar_t *dumpIdentifier, void *context, EXCEPTION_POINTERS *exceptionInformation, MDRawAssertionInfo *assertionInformation, bool hasDumpFile)
 {
@@ -73,9 +80,10 @@ bool otterCrashDumpHandler(const wchar_t *dumpDirectory, const wchar_t *dumpIden
 
 		qDebug("Crash dump saved to: %s", dumpPath.toLocal8Bit().constData());
 
+#ifdef OTTER_ENABLE_CRASH_REPORTS
 		const MainWindow *mainWindow(Application::getActiveWindow());
-
 		QProcess::startDetached(QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QDir::separator() + QLatin1String("crash-reporter.exe")), {dumpPath, (mainWindow ? mainWindow->getUrl().toDisplayString() : QString())});
+#endif
 	}
 
 	return hasDumpFile;
@@ -89,14 +97,61 @@ bool otterCrashDumpHandler(const google_breakpad::MinidumpDescriptor &descriptor
 	{
 		qDebug("Crash dump saved to: %s", descriptor.path());
 
+#ifdef OTTER_ENABLE_CRASH_REPORTS
 		const MainWindow *mainWindow(Application::getActiveWindow());
-
 		QProcess::startDetached(QDir::toNativeSeparators(QCoreApplication::applicationDirPath() + QDir::separator() + QLatin1String("crash-reporter")), {descriptor.path(), (mainWindow ? mainWindow->getUrl().toDisplayString() : QString())});
+#endif
 	}
 
 	return hasDumpFile;
 }
 #endif
+#endif
+
+#ifdef OTTER_ENABLE_CRASH_DUMPS
+void otterInstallCrashDumps()
+{
+	const QString crashDirectoryPath(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + QLatin1String("/crash-dumps"));
+	if (!QDir().mkpath(crashDirectoryPath))
+	{
+		qWarning("Could not create crash dump directory: %s", qPrintable(crashDirectoryPath));
+		return;
+	}
+
+	const QDateTime startedAt(QDateTime::currentDateTimeUtc());
+	QJsonObject metadata;
+	metadata.insert(QLatin1String("startedAtUtc"), startedAt.toString(Qt::ISODateWithMs));
+	metadata.insert(QLatin1String("processId"), QCoreApplication::applicationPid());
+	metadata.insert(QLatin1String("application"), QCoreApplication::applicationName());
+	metadata.insert(QLatin1String("version"), QCoreApplication::applicationVersion());
+	metadata.insert(QLatin1String("gitCommit"), QLatin1String(OTTER_GIT_COMMIT));
+	metadata.insert(QLatin1String("sourceTreeDirty"), OTTER_SOURCE_DIRTY);
+	metadata.insert(QLatin1String("qtVersion"), QLatin1String(QT_VERSION_STR));
+	metadata.insert(QLatin1String("buildType"), QLatin1String(OTTER_BUILD_TYPE));
+	metadata.insert(QLatin1String("compiler"), QLatin1String(OTTER_COMPILER));
+	metadata.insert(QLatin1String("os"), QSysInfo::prettyProductName());
+	metadata.insert(QLatin1String("kernel"), QSysInfo::kernelVersion());
+	metadata.insert(QLatin1String("cpuArchitecture"), QSysInfo::currentCpuArchitecture());
+	metadata.insert(QLatin1String("executable"), QCoreApplication::applicationFilePath());
+	const QString metadataPath(crashDirectoryPath + QLatin1String("/session-") + QString::number(QCoreApplication::applicationPid()) + QLatin1Char('-') + startedAt.toString(QLatin1String("yyyyMMdd'T'HHmmss'Z'")) + QLatin1String(".json"));
+	QFile metadataFile(metadataPath);
+	if (metadataFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	{
+		metadataFile.write(QJsonDocument(metadata).toJson(QJsonDocument::Indented));
+	}
+	else
+	{
+		qWarning("Could not write crash metadata: %s", qPrintable(metadataPath));
+	}
+
+#ifdef Q_OS_WIN32
+	new google_breakpad::ExceptionHandler(reinterpret_cast<const wchar_t*>(QDir(crashDirectoryPath).absolutePath().utf16()), 0, otterCrashDumpHandler, 0, true);
+#elif defined(Q_OS_LINUX)
+	new google_breakpad::ExceptionHandler(google_breakpad::MinidumpDescriptor(crashDirectoryPath.toStdString()), 0, otterCrashDumpHandler, 0, true, -1);
+#endif
+
+	qInfo("Crash dumps will be saved to: %s", qPrintable(crashDirectoryPath));
+}
 #endif
 
 int main(int argc, char *argv[])
@@ -120,14 +175,6 @@ int main(int argc, char *argv[])
 #if !defined(Q_OS_WIN32)
 	qSetMessagePattern(QLatin1String("%{if-category}%{category}: %{endif}%{message}\n"));
 	qInstallMessageHandler(otterMessageHander);
-#endif
-
-#ifdef OTTER_ENABLE_CRASH_REPORTS
-#ifdef Q_OS_WIN32
-	new google_breakpad::ExceptionHandler(reinterpret_cast<const wchar_t*>(QStandardPaths::writableLocation(QStandardPaths::TempLocation).utf16()), 0, otterCrashDumpHandler, 0, true);
-#elif defined(Q_OS_LINUX)
-	new google_breakpad::ExceptionHandler(google_breakpad::MinidumpDescriptor(QStandardPaths::writableLocation(QStandardPaths::TempLocation).toStdString()), 0, otterCrashDumpHandler, 0, true, -1);
-#endif
 #endif
 
 	// Enable automatic High-DPI scaling support. This could be done with earlier Qt
@@ -163,6 +210,10 @@ int main(int argc, char *argv[])
 	}
 
 	Application application(argc, argv);
+
+#ifdef OTTER_ENABLE_CRASH_DUMPS
+	otterInstallCrashDumps();
+#endif
 
 #ifdef OTTER_NO_WEB_BACKENDS
 	QMessageBox::critical(nullptr, QLatin1String("Error"), QLatin1String("No web backends available."), QMessageBox::Close);

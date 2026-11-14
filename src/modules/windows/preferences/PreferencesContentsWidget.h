@@ -43,9 +43,10 @@ public:
 		ContentTab = 1,
 		PrivacyTab = 2,
 		SearchTab = 3,
-		InputTab = 4,
-		WebsitesTab = 5,
-		AdvancedTab = 6
+		FormFillerTab = 4,
+		InputTab = 5,
+		WebsitesTab = 6,
+		AdvancedTab = 7
 	};
 
 	Q_ENUM(TabIndex)

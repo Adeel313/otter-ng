@@ -33,6 +33,7 @@ WebsiteInformationDialog::WebsiteInformationDialog(WebWidget *widget, QWidget *p
 	m_ui(new Ui::WebsiteInformationDialog)
 {
 	m_ui->setupUi(this);
+	m_ui->tabWidget->setTabEnabled(m_ui->tabWidget->indexOf(m_ui->securityTab), true);
 
 	const WebWidget::ContentStates state(widget->getContentState());
 	const QString characterEncoding(widget->getCharacterEncoding());
@@ -59,6 +60,11 @@ WebsiteInformationDialog::WebsiteInformationDialog(WebWidget *widget, QWidget *p
 	{
 		m_ui->stateLabel->setText(tr("Your connection with this website is private."));
 		m_ui->stateIconLabel->setPixmap(ThemesManager::createIcon(QLatin1String("badge-secure"), false).pixmap(16, 16));
+	}
+	else if (widget->getUrl().scheme() == QLatin1String("https") && m_sslInformation.errors.isEmpty())
+	{
+		m_ui->stateLabel->setText(tr("This website uses HTTPS. Connection security details are unavailable."));
+		m_ui->stateIconLabel->setPixmap(ThemesManager::createIcon(QLatin1String("badge-unknown"), false).pixmap(16, 16));
 	}
 	else if (state.testFlag(WebWidget::RemoteContentState))
 	{
@@ -224,23 +230,23 @@ WebsiteInformationDialog::WebsiteInformationDialog(WebWidget *widget, QWidget *p
 		Application::triggerAction(ActionsManager::WebsitePreferencesAction, {}, this);
 	});
 
-	if (m_sslInformation.certificates.isEmpty())
-	{
-		m_ui->tabWidget->setTabEnabled(2, false);
-
-		return;
-	}
-
 	const QSslCertificate certificate(m_sslInformation.certificates.value(0));
+	const QString unavailable(tr("Unavailable"));
+	const auto securityValue = [&unavailable](const QString &value)
+	{
+		return value.isEmpty() ? unavailable : value;
+	};
 
-	m_ui->certificateIssuedToLabelWidget->setText(certificate.subjectInfo(QSslCertificate::CommonName).join(QLatin1String(", ")));
-	m_ui->certificateIssuedByLabelWidget->setText(certificate.issuerInfo(QSslCertificate::CommonName).join(QLatin1String(", ")));
-	m_ui->certificateIssuedOnLabelWidget->setText(Utils::formatDateTime(certificate.effectiveDate(), {}, false));
-	m_ui->certificateExpiresOnLabelWidget->setText(Utils::formatDateTime(certificate.expiryDate(), {}, false));
-	m_ui->cipherProtocolLabelWidget->setText(m_sslInformation.cipher.protocolString());
-	m_ui->cipherAuthenticationMethodLabelWidget->setText(m_sslInformation.cipher.authenticationMethod());
-	m_ui->cipherEncryptionMethodLabelWidget->setText(m_sslInformation.cipher.encryptionMethod());
-	m_ui->cipherKeyExchangeMethodLabelWidget->setText(m_sslInformation.cipher.keyExchangeMethod());
+	m_ui->certificateDetailsButton->setEnabled(!certificate.isNull());
+	m_ui->certificateDetailsButton->setToolTip(certificate.isNull() ? tr("The browser backend did not provide a certificate for this page.") : QString());
+	m_ui->certificateIssuedToLabelWidget->setText(securityValue(certificate.subjectInfo(QSslCertificate::CommonName).join(QLatin1String(", "))));
+	m_ui->certificateIssuedByLabelWidget->setText(securityValue(certificate.issuerInfo(QSslCertificate::CommonName).join(QLatin1String(", "))));
+	m_ui->certificateIssuedOnLabelWidget->setText(certificate.effectiveDate().isValid() ? Utils::formatDateTime(certificate.effectiveDate(), {}, false) : unavailable);
+	m_ui->certificateExpiresOnLabelWidget->setText(certificate.expiryDate().isValid() ? Utils::formatDateTime(certificate.expiryDate(), {}, false) : unavailable);
+	m_ui->cipherProtocolLabelWidget->setText(securityValue(m_sslInformation.cipher.protocolString()));
+	m_ui->cipherAuthenticationMethodLabelWidget->setText(securityValue(m_sslInformation.cipher.authenticationMethod()));
+	m_ui->cipherEncryptionMethodLabelWidget->setText(securityValue(m_sslInformation.cipher.encryptionMethod()));
+	m_ui->cipherKeyExchangeMethodLabelWidget->setText(securityValue(m_sslInformation.cipher.keyExchangeMethod()));
 
 	if (m_sslInformation.errors.isEmpty())
 	{

@@ -717,6 +717,10 @@ void WebWidget::setOption(int identifier, const QVariant &value)
 			emit arbitraryActionsStateChanged({ActionsManager::EnableJavaScriptAction});
 
 			break;
+		case SettingsManager::Permissions_EnableImagesOption:
+			emit optionChanged(identifier, getOption(identifier));
+
+			break;
 		default:
 			break;
 	}

@@ -23,6 +23,7 @@
 #include "BookmarksManager.h"
 #include "Console.h"
 #include "FeedsManager.h"
+#include "FormFillerManager.h"
 #include "GesturesManager.h"
 #include "HandlersManager.h"
 #include "HistoryManager.h"
@@ -424,6 +425,8 @@ Application::Application(int &argc, char **argv) : QApplication(argc, argv),
 	BookmarksManager::createInstance();
 
 	FeedsManager::createInstance();
+
+	FormFillerManager::createInstance();
 
 	GesturesManager::createInstance();
 
@@ -1003,6 +1006,11 @@ void Application::handleAboutToQuit()
 	if (shouldClearAll || clearSettings.contains(QLatin1String("downloads")))
 	{
 		TransfersManager::clearTransfers();
+	}
+
+	if (shouldClearAll || clearSettings.contains(QLatin1String("forms")))
+	{
+		FormFillerManager::clear();
 	}
 
 	if (shouldClearAll || clearSettings.contains(QLatin1String("caches")))

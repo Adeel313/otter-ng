@@ -33,12 +33,19 @@
 #include "../modules/widgets/bookmark/BookmarkWidget.h"
 
 #include <QtCore/QTimer>
+#include <QtCore/QFile>
+#include <QtCore/QTextStream>
 #include <QtGui/QDrag>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLayout>
 #include <QtWidgets/QStyleOption>
+#include <QtWidgets/QLabel>
+
+#if defined(Q_OS_LINUX)
+#include <unistd.h>
+#endif
 
 namespace Otter
 {
@@ -1274,6 +1281,40 @@ void TabBarToolBarWidget::populateEntries()
 	for (int i = 0; i < definition.entries.count(); ++i)
 	{
 		const QString action(definition.entries.at(i).action);
+
+		if (action == QLatin1String("ClosedWindowsMenu"))
+		{
+			QLabel *memoryUsageLabel(new QLabel(this));
+			memoryUsageLabel->setAlignment(Qt::AlignCenter);
+			memoryUsageLabel->setToolTip(tr("Otter process memory usage, including its threads"));
+			memoryUsageLabel->setMargin(4);
+
+			auto updateMemoryUsage = [memoryUsageLabel]()
+			{
+#if defined(Q_OS_LINUX)
+				QFile statmFile(QLatin1String("/proc/self/statm"));
+				if (statmFile.open(QIODevice::ReadOnly))
+				{
+					QTextStream stream(&statmFile);
+					quint64 totalPages(0);
+					quint64 residentPages(0);
+					stream >> totalPages >> residentPages;
+					Q_UNUSED(totalPages)
+					const quint64 memoryMegabytes((residentPages * static_cast<quint64>(sysconf(_SC_PAGESIZE))) / (1024 * 1024));
+					memoryUsageLabel->setText(QObject::tr("%1 MB").arg(memoryMegabytes));
+					return;
+				}
+#endif
+				memoryUsageLabel->setText(QObject::tr("— MB"));
+			};
+
+			updateMemoryUsage();
+			QTimer *memoryUsageTimer(new QTimer(memoryUsageLabel));
+			memoryUsageTimer->setInterval(1000);
+			connect(memoryUsageTimer, &QTimer::timeout, memoryUsageLabel, updateMemoryUsage);
+			memoryUsageTimer->start();
+			addWidget(memoryUsageLabel);
+		}
 
 		if (action == QLatin1String("separator"))
 		{

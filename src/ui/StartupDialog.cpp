@@ -53,7 +53,12 @@ StartupDialog::StartupDialog(const QString &sessionName, QWidget *parent) : Dial
 		m_ui->sessionComboBox->addItem((session.title.isEmpty() ? tr("(Untitled)") : session.title), session.path);
 	}
 
-	const int index(qMax(0, m_ui->sessionComboBox->findData(sessionName)));
+	int index(m_ui->sessionComboBox->findData(sessionName));
+
+	if (index < 0)
+	{
+		index = 0;
+	}
 
 	m_ui->sessionComboBox->setCurrentIndex(index);
 

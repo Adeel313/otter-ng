@@ -29,6 +29,7 @@
 #include "../modules/widgets/configurationOption/ConfigurationOptionWidget.h"
 #include "../modules/widgets/contentBlockingInformation/ContentBlockingInformationWidget.h"
 #include "../modules/widgets/errorConsole/ErrorConsoleWidget.h"
+#include "../modules/widgets/imageOptions/ImageOptionsWidget.h"
 #include "../modules/widgets/menuButton/MenuButtonWidget.h"
 #include "../modules/widgets/panelChooser/PanelChooserWidget.h"
 #include "../modules/widgets/progressInformation/ProgressInformationWidget.h"
@@ -102,6 +103,11 @@ QWidget* createToolBarItem(const ToolBarsManager::ToolBarDefinition::Entry &defi
 	if (definition.action == QLatin1String("ErrorConsoleWidget"))
 	{
 		return new ErrorConsoleWidget(parent);
+	}
+
+	if (definition.action == QLatin1String("ImageOptionsWidget"))
+	{
+		return new ImageOptionsWidget(window, definition, parent);
 	}
 
 	if (definition.action == QLatin1String("ContentBlockingInformationWidget"))

@@ -27,6 +27,7 @@
 #include "../../../../core/ActionsManager.h"
 #include "../../../../core/Console.h"
 #include "../../../../core/ContentFiltersManager.h"
+#include "../../../../core/FormFillerManager.h"
 #include "../../../../core/HandlersManager.h"
 #include "../../../../core/SettingsManager.h"
 #include "../../../../core/ThemesManager.h"
@@ -37,10 +38,14 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QWheelEvent>
 #include <QtWebKit/QWebHistory>
 #include <QtWebKitWidgets/QWebFrame>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QMessageBox>
 
 namespace Otter
@@ -118,6 +123,15 @@ void QtWebKitFrame::handleLoadFinished()
 			m_frame->documentElement().evaluateJavaScript(QString::fromLatin1(file.readAll()).arg(m_widget->getMessageToken()));
 
 			file.close();
+		}
+	}
+
+	if (!m_widget->isPrivate() && m_frame == m_frame->page()->mainFrame())
+	{
+		QFile file(QLatin1String(":/modules/backends/web/qtwebkit/resources/formData.js"));
+		if (file.open(QIODevice::ReadOnly))
+		{
+			m_frame->documentElement().evaluateJavaScript(QString::fromUtf8(file.readAll()).arg(m_widget->getMessageToken()));
 		}
 	}
 
@@ -300,6 +314,71 @@ void QtWebKitPage::handleFrameCreation(QWebFrame *frame)
 
 void QtWebKitPage::handleConsoleMessage(MessageSource category, MessageLevel level, const QString &message, int line, const QString &source)
 {
+	const QString savePrefix(QLatin1String("otter-form-save:") + (m_widget ? m_widget->getMessageToken() : QString()) + QLatin1Char(':'));
+	const QString suggestPrefix(QLatin1String("otter-form-suggest:") + (m_widget ? m_widget->getMessageToken() : QString()) + QLatin1Char(':'));
+
+	if (m_widget && message.startsWith(savePrefix))
+	{
+		if (!m_widget->isPrivate())
+		{
+			QJsonParseError parseError;
+			const QJsonDocument document(QJsonDocument::fromJson(QByteArray::fromBase64(message.mid(savePrefix.length()).toLatin1()), &parseError));
+			const QUrl pageUrl(document.object().value(QLatin1String("url")).toString());
+			if (parseError.error == QJsonParseError::NoError && pageUrl.host().compare(m_widget->getUrl().host(), Qt::CaseInsensitive) == 0)
+			{
+				for (const QJsonValue &fieldValue: document.object().value(QLatin1String("fields")).toArray())
+				{
+					const QJsonObject field(fieldValue.toObject());
+					FormFillerManager::addValue(pageUrl, field.value(QLatin1String("name")).toString(), field.value(QLatin1String("autocomplete")).toString(), field.value(QLatin1String("value")).toString());
+				}
+			}
+		}
+		return;
+	}
+
+	if (m_widget && message.startsWith(suggestPrefix))
+	{
+		if (!m_widget->isPrivate())
+		{
+			QJsonParseError parseError;
+			const QJsonDocument document(QJsonDocument::fromJson(QByteArray::fromBase64(message.mid(suggestPrefix.length()).toLatin1()), &parseError));
+			const QJsonObject field(document.object());
+			const QString fieldName(field.value(QLatin1String("name")).toString());
+			const QString prefix(field.value(QLatin1String("value")).toString());
+			const QRect fieldRectangle(qRound(field.value(QLatin1String("x")).toDouble()), qRound(field.value(QLatin1String("y")).toDouble()), qRound(field.value(QLatin1String("width")).toDouble()), qRound(field.value(QLatin1String("height")).toDouble()));
+			QStringList values;
+			for (const QString &value: FormFillerManager::getValues(m_widget->getUrl(), fieldName, field.value(QLatin1String("autocomplete")).toString()))
+			{
+				if (value.startsWith(prefix, Qt::CaseInsensitive) && value.compare(prefix, Qt::CaseInsensitive) != 0)
+				{
+					values.append(value);
+				}
+			}
+			if (parseError.error == QJsonParseError::NoError && !fieldName.isEmpty() && fieldName.size() <= 256 && prefix.size() < 256 && fieldRectangle.isValid() && fieldRectangle.width() < 2000 && fieldRectangle.height() < 500 && !values.isEmpty())
+			{
+				QMenu *menu(new QMenu(m_widget));
+				menu->setMinimumWidth(fieldRectangle.width());
+				for (const QString &value: values)
+				{
+					QAction *action(menu->addAction(value));
+					connect(action, &QAction::triggered, this, [this, fieldName, prefix, value]()
+					{
+						QJsonArray arguments;
+						arguments.append(fieldName);
+						arguments.append(prefix);
+						arguments.append(value);
+						const QString valuesJson(QString::fromUtf8(QJsonDocument(arguments).toJson(QJsonDocument::Compact)));
+						const QString script(QStringLiteral("(function(a){const field=document.activeElement;if(!field||field.name!==a[0]||field.value!==a[1])return;const setter=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field),'value').set;setter.call(field,a[2]);field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));})(%1);").arg(valuesJson));
+						mainFrame()->documentElement().evaluateJavaScript(script);
+					});
+				}
+				menu->popup(m_widget->mapToGlobal(fieldRectangle.bottomLeft()));
+				connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+			}
+		}
+		return;
+	}
+
 	Console::MessageLevel mappedLevel(Console::DebugLevel);
 
 	switch (level)

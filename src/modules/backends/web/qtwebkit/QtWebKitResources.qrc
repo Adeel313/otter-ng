@@ -3,6 +3,7 @@
         <file>resources/errorPage.js</file>
         <file>resources/formExtractor.js</file>
         <file>resources/formFiller.js</file>
+        <file>resources/formData.js</file>
         <file>resources/resetSpellCheck.js</file>
     </qresource>
 </RCC>
