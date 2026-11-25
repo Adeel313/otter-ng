@@ -19,3 +19,7 @@ build-qt612/
 webengine-bin*/
 wetest/formtest*
 wetest/wetest
+
+# AI agent config dirs
+.codex/
+.agents/
