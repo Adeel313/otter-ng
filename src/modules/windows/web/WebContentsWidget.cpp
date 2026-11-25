@@ -1205,7 +1205,14 @@ void WebContentsWidget::setWidget(WebWidget *widget, const QVariantMap &paramete
 			hints |= SessionsManager::PrivateOpen;
 		}
 
-		emit requestedNewWindow(new WebContentsWidget({{QLatin1String("hints"), QVariant(hints)}}, widget->getOptions(), widget, nullptr, nullptr), hints, parameters);
+		QVariantMap mutableParameters(parameters);
+
+		if (m_window)
+		{
+			mutableParameters[QLatin1String("openerIdentifier")] = m_window->getIdentifier();
+		}
+
+		emit requestedNewWindow(new WebContentsWidget({{QLatin1String("hints"), QVariant(hints)}}, widget->getOptions(), widget, nullptr, nullptr), hints, mutableParameters);
 	});
 	connect(m_webWidget, &WebWidget::requestedPopupWindow, this, &WebContentsWidget::handlePopupWindowRequest);
 	connect(m_webWidget, &WebWidget::requestedPermission, this, &WebContentsWidget::handlePermissionRequest);

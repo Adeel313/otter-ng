@@ -67,6 +67,7 @@ Window::Window(const QVariantMap &parameters, ContentsWidget *widget, MainWindow
 	m_contentsWidget(nullptr),
 	m_parameters(parameters),
 	m_identifier(++m_identifierCounter),
+	m_openerIdentifier(parameters.value(QLatin1String("openerIdentifier"), 0).toULongLong()),
 	m_suspendTimer(0),
 	m_isAboutToClose(false),
 	m_isPinned(false)
@@ -178,6 +179,17 @@ void Window::triggerAction(int identifier, const QVariantMap &parameters, Action
 			{
 				requestClose();
 			}
+
+			break;
+		case ActionsManager::GoBackAction:
+			if (canCloseOnBack())
+			{
+				requestClose();
+
+				break;
+			}
+
+			getContentsWidget()->triggerAction(identifier, parameters, trigger);
 
 			break;
 		case ActionsManager::FullScreenAction:
@@ -620,6 +632,17 @@ ActionsManager::ActionDefinition::State Window::getActionState(int identifier, c
 			state.isEnabled = !m_isPinned;
 
 			break;
+		case ActionsManager::GoBackAction:
+			if (canCloseOnBack())
+			{
+				state.isEnabled = true;
+			}
+			else if (m_contentsWidget)
+			{
+				state = m_contentsWidget->getActionState(identifier, parameters);
+			}
+
+			break;
 		case ActionsManager::GoToParentDirectoryAction:
 			state.isEnabled = !Utils::isUrlEmpty(getUrl());
 
@@ -733,6 +756,23 @@ int Window::getZoom() const
 bool Window::canClone() const
 {
 	return ((m_contentsWidget && !m_isAboutToClose) ? m_contentsWidget->canClone() : false);
+}
+
+bool Window::canCloseOnBack() const
+{
+	if (m_openerIdentifier == 0 || m_isPinned || m_isAboutToClose || !m_contentsWidget || !m_mainWindow || m_mainWindow->getWindowCount() < 2)
+	{
+		return false;
+	}
+
+	const Session::Window::History history(m_contentsWidget->getHistory());
+
+	if (history.entries.isEmpty())
+	{
+		return false;
+	}
+
+	return (history.index <= 0 || (history.index == 1 && Utils::isUrlEmpty(QUrl(history.entries.value(0).url))));
 }
 
 bool Window::canZoom() const

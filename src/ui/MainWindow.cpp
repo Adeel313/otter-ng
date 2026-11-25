@@ -2227,7 +2227,17 @@ Window* MainWindow::openWindow(ContentsWidget *widget, SessionsManager::OpenHint
 	}
 	else
 	{
-		window = new Window({{QLatin1String("hints"), QVariant(hints)}, {QLatin1String("size"), ((SettingsManager::getOption(SettingsManager::Interface_NewTabOpeningActionOption).toString() == QLatin1String("maximizeTab")) ? m_workspace->size() : QSize(800, 600))}}, widget, this);
+		QVariantMap windowParameters({{QLatin1String("hints"), QVariant(hints)}, {QLatin1String("size"), ((SettingsManager::getOption(SettingsManager::Interface_NewTabOpeningActionOption).toString() == QLatin1String("maximizeTab")) ? m_workspace->size() : QSize(800, 600))}});
+
+		for (auto iterator = parameters.constBegin(); iterator != parameters.constEnd(); ++iterator)
+		{
+			if (!windowParameters.contains(iterator.key()))
+			{
+				windowParameters.insert(iterator.key(), iterator.value());
+			}
+		}
+
+		window = new Window(windowParameters, widget, this);
 
 		addWindow(window, hints, parameters.value(QLatin1String("index"), -1).toInt());
 

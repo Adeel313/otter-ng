@@ -101,6 +101,8 @@ protected:
 private:
 	Q_DISABLE_COPY(Window)
 
+	bool canCloseOnBack() const;
+
 	MainWindow *m_mainWindow;
 	WindowToolBarWidget *m_addressBarWidget;
 	QPointer<ContentsWidget> m_contentsWidget;
@@ -108,6 +110,7 @@ private:
 	Session::Window m_session;
 	QVariantMap m_parameters;
 	quint64 m_identifier;
+	quint64 m_openerIdentifier;
 	int m_suspendTimer;
 	bool m_isAboutToClose;
 	bool m_isPinned;
