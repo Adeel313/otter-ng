@@ -23,3 +23,6 @@ wetest/wetest
 # AI agent config dirs
 .codex/
 .agents/
+
+# Local scratch dirs
+.freebuff/
