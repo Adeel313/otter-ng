@@ -876,6 +876,8 @@ void WebContentsWidget::handleUrlChange(const QUrl &url)
 			}
 		}
 	}
+
+	emit titleChanged(getTitle());
 }
 
 void WebContentsWidget::handleSavePasswordRequest(const PasswordsManager::Password &password, bool isUpdate)
@@ -1220,7 +1222,10 @@ void WebContentsWidget::setWidget(WebWidget *widget, const QVariantMap &paramete
 	connect(m_webWidget, &WebWidget::requestedGeometryChange, this, &WebContentsWidget::requestedGeometryChange);
 	connect(m_webWidget, &WebWidget::requestedInspectorVisibilityChange, this, &WebContentsWidget::handleInspectorVisibilityChangeRequest);
 	connect(m_webWidget, &WebWidget::statusMessageChanged, this, &WebContentsWidget::statusMessageChanged);
-	connect(m_webWidget, &WebWidget::titleChanged, this, &WebContentsWidget::titleChanged);
+	connect(m_webWidget, &WebWidget::titleChanged, this, [this]()
+	{
+		emit titleChanged(getTitle());
+	});
 	connect(m_webWidget, &WebWidget::urlChanged, this, &WebContentsWidget::urlChanged);
 	connect(m_webWidget, &WebWidget::urlChanged, this, &WebContentsWidget::handleUrlChange);
 	connect(m_webWidget, &WebWidget::iconChanged, this, &WebContentsWidget::iconChanged);
