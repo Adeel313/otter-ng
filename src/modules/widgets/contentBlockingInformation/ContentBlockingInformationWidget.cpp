@@ -21,12 +21,14 @@
 #include "ContentBlockingInformationWidget.h"
 #include "../../../core/Application.h"
 #include "../../../core/ContentFiltersManager.h"
+#include "../../../core/SettingsManager.h"
 #include "../../../core/ThemesManager.h"
 #include "../../../core/Utils.h"
 #include "../../../ui/ContentsWidget.h"
 #include "../../../ui/ToolBarWidget.h"
 #include "../../../ui/Window.h"
 
+#include <QtWidgets/qactiongroup.h>
 #include <QtWidgets/QStyleOptionToolButton>
 #include <QtWidgets/QStylePainter>
 
@@ -35,15 +37,26 @@ namespace Otter
 
 ContentBlockingInformationWidget::ContentBlockingInformationWidget(Window *window, const ToolBarsManager::ToolBarDefinition::Entry &definition, QWidget *parent) : ToolButtonWidget(definition, parent),
 	m_window(window),
-	m_elementsMenu(nullptr),
-	m_profilesMenu(nullptr),
+	m_customMenu(nullptr),
+	m_enableAdsAction(nullptr),
+	m_disableAdsAction(nullptr),
 	m_requestsAmount(0),
 	m_isContentBlockingEnabled(false)
 {
 	QMenu *menu(new QMenu(this));
+	QActionGroup *actionGroup(new QActionGroup(menu));
 
-	m_profilesMenu = menu->addMenu(tr("Active Profiles"));
-	m_elementsMenu = menu->addMenu(tr("Blocked Elements"));
+	actionGroup->setExclusive(true);
+
+	m_enableAdsAction = menu->addAction(tr("Enable ads on this website"));
+	m_enableAdsAction->setCheckable(true);
+	m_disableAdsAction = menu->addAction(tr("Disable ads on this web site"));
+	m_disableAdsAction->setCheckable(true);
+
+	actionGroup->addAction(m_enableAdsAction);
+	actionGroup->addAction(m_disableAdsAction);
+
+	m_customMenu = menu->addMenu(tr("Custom"));
 
 	setMenu(menu);
 	setPopupMode(QToolButton::MenuButtonPopup);
@@ -58,10 +71,10 @@ ContentBlockingInformationWidget::ContentBlockingInformationWidget(Window *windo
 		connect(toolBar, &ToolBarWidget::windowChanged, this, &ContentBlockingInformationWidget::setWindow);
 	}
 
-	connect(m_elementsMenu, &QMenu::aboutToShow, this, &ContentBlockingInformationWidget::populateElementsMenu);
-	connect(m_elementsMenu, &QMenu::triggered, this, &ContentBlockingInformationWidget::openElement);
-	connect(m_profilesMenu, &QMenu::aboutToShow, this, &ContentBlockingInformationWidget::populateProfilesMenu);
-	connect(m_profilesMenu, &QMenu::triggered, this, &ContentBlockingInformationWidget::toggleOption);
+	connect(m_customMenu, &QMenu::aboutToShow, this, &ContentBlockingInformationWidget::populateProfilesMenu);
+	connect(m_customMenu, &QMenu::triggered, this, &ContentBlockingInformationWidget::toggleOption);
+	connect(m_enableAdsAction, &QAction::triggered, this, &ContentBlockingInformationWidget::enableAds);
+	connect(m_disableAdsAction, &QAction::triggered, this, &ContentBlockingInformationWidget::disableAds);
 	connect(defaultAction(), &QAction::triggered, this, &ContentBlockingInformationWidget::toggleContentBlocking);
 }
 
@@ -89,12 +102,35 @@ void ContentBlockingInformationWidget::clear()
 	updateState();
 }
 
-void ContentBlockingInformationWidget::openElement(QAction *action)
+void ContentBlockingInformationWidget::enableAds()
 {
-	if (action)
+	setAdsEnabled(false);
+}
+
+void ContentBlockingInformationWidget::disableAds()
+{
+	setAdsEnabled(true);
+}
+
+void ContentBlockingInformationWidget::setAdsEnabled(bool isEnabled)
+{
+	if (!m_window || m_window->isAboutToClose())
 	{
-		Application::triggerAction(ActionsManager::OpenUrlAction, {{QLatin1String("url"), QUrl(action->statusTip())}}, parentWidget());
+		return;
 	}
+
+	const QString host(Utils::extractHost(m_window->getUrl()));
+
+	if (host.isEmpty())
+	{
+		return;
+	}
+
+	m_window->setOption(SettingsManager::ContentBlocking_EnableContentBlockingOption, {});
+	SettingsManager::setOption(SettingsManager::ContentBlocking_EnableContentBlockingOption, isEnabled, host);
+
+	updateState();
+	Application::triggerAction(ActionsManager::ReloadAction, {}, m_window);
 }
 
 void ContentBlockingInformationWidget::toggleContentBlocking()
@@ -135,88 +171,20 @@ void ContentBlockingInformationWidget::toggleOption(QAction *action)
 	}
 }
 
-void ContentBlockingInformationWidget::populateElementsMenu()
-{
-	m_elementsMenu->clear();
-
-	if (!m_window || !m_window->getWebWidget())
-	{
-		return;
-	}
-
-	const QVector<NetworkManager::ResourceInformation> requests(m_window->getWebWidget()->getBlockedRequests().mid(m_requestsAmount - 50));
-
-	for (const NetworkManager::ResourceInformation &request: requests)
-	{
-		QString type;
-
-		switch (request.resourceType)
-		{
-			case NetworkManager::MainFrameType:
-				type = tr("main frame");
-
-				break;
-			case NetworkManager::SubFrameType:
-				type = tr("subframe");
-
-				break;
-			case NetworkManager::PopupType:
-				type = tr("pop-up");
-
-				break;
-			case NetworkManager::StyleSheetType:
-				type = tr("stylesheet");
-
-				break;
-			case NetworkManager::ScriptType:
-				type = tr("script");
-
-				break;
-			case NetworkManager::ImageType:
-				type = tr("image");
-
-				break;
-			case NetworkManager::ObjectType:
-				type = tr("object");
-
-				break;
-			case NetworkManager::ObjectSubrequestType:
-				type = tr("object subrequest");
-
-				break;
-			case NetworkManager::XmlHttpRequestType:
-				type = tr("XHR");
-
-				break;
-			case NetworkManager::WebSocketType:
-				type = tr("WebSocket");
-
-				break;
-			default:
-				type = tr("other");
-
-				break;
-		}
-
-		QAction *action(m_elementsMenu->addAction(QStringLiteral("%1\t [%2]").arg(Utils::elideText(request.url.toString(), m_elementsMenu->fontMetrics(), m_elementsMenu), type)));
-		action->setStatusTip(request.url.toString());
-	}
-}
-
 void ContentBlockingInformationWidget::populateProfilesMenu()
 {
-	m_profilesMenu->clear();
+	m_customMenu->clear();
 
 	if (!m_window || !m_window->getWebWidget())
 	{
 		return;
 	}
 
-	QAction *enableContentBlockingAction(m_profilesMenu->addAction(tr("Enable Content Blocking"), this, &ContentBlockingInformationWidget::toggleContentBlocking));
+	QAction *enableContentBlockingAction(m_customMenu->addAction(tr("Enable Content Blocking"), this, &ContentBlockingInformationWidget::toggleContentBlocking));
 	enableContentBlockingAction->setCheckable(true);
 	enableContentBlockingAction->setChecked(m_window->getOption(SettingsManager::ContentBlocking_EnableContentBlockingOption).toBool());
 
-	m_profilesMenu->addSeparator();
+	m_customMenu->addSeparator();
 
 	const QVector<NetworkManager::ResourceInformation> requests(m_window->getWebWidget()->getBlockedRequests());
 	QHash<QString, int> amounts;
@@ -243,8 +211,8 @@ void ContentBlockingInformationWidget::populateProfilesMenu()
 		if (profile)
 		{
 			const int amount(amounts.value(profile->getName()));
-			const QString title(Utils::elideText(profile->getTitle(), m_profilesMenu->fontMetrics(), m_profilesMenu));
-			QAction *profileAction(m_profilesMenu->addAction((amount > 0) ? QStringLiteral("%1 (%2)").arg(title, QString::number(amount)) : title));
+			const QString title(Utils::elideText(profile->getTitle(), m_customMenu->fontMetrics(), m_customMenu));
+			QAction *profileAction(m_customMenu->addAction((amount > 0) ? QStringLiteral("%1 (%2)").arg(title, QString::number(amount)) : title));
 			profileAction->setData(profile->getName());
 			profileAction->setCheckable(true);
 			profileAction->setChecked(enabledProfiles.contains(profile->getName()));
@@ -261,6 +229,10 @@ void ContentBlockingInformationWidget::handleBlockedRequest()
 
 void ContentBlockingInformationWidget::updateState()
 {
+	m_isContentBlockingEnabled = (m_window && m_window->getOption(SettingsManager::ContentBlocking_EnableContentBlockingOption).toBool());
+	m_enableAdsAction->setChecked(!m_isContentBlockingEnabled);
+	m_disableAdsAction->setChecked(m_isContentBlockingEnabled);
+
 	const QVariantMap options(getOptions());
 
 	if (isCustomized() && options.contains(QLatin1String("icon")))
@@ -324,8 +296,6 @@ void ContentBlockingInformationWidget::updateState()
 	setText(getText());
 	setToolTip(text());
 	setIcon(m_icon);
-
-	m_elementsMenu->setEnabled(m_requestsAmount > 0);
 }
 
 void ContentBlockingInformationWidget::setWindow(Window *window)

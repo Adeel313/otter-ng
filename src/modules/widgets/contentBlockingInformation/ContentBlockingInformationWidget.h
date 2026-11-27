@@ -45,18 +45,21 @@ protected:
 
 protected slots:
 	void clear();
-	void openElement(QAction *action);
+	void enableAds();
+	void disableAds();
 	void toggleContentBlocking();
 	void toggleOption(QAction *action);
-	void populateElementsMenu();
 	void populateProfilesMenu();
 	void handleBlockedRequest();
 	void setWindow(Window *window);
 
 private:
+	void setAdsEnabled(bool isEnabled);
+
 	Window *m_window;
-	QMenu *m_elementsMenu;
-	QMenu *m_profilesMenu;
+	QMenu *m_customMenu;
+	QAction *m_enableAdsAction;
+	QAction *m_disableAdsAction;
 	QIcon m_icon;
 	int m_requestsAmount;
 	bool m_isContentBlockingEnabled;
