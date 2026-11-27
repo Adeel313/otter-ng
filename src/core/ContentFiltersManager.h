@@ -144,6 +144,7 @@ public:
 	explicit ContentFiltersProfile(QObject *parent = nullptr);
 
 	virtual void clear() = 0;
+	virtual void addRules(const QStringList &rules) = 0;
 	virtual void setProfileSummary(const ProfileSummary &profileSummary) = 0;
 	virtual QString getName() const = 0;
 	virtual QString getTitle() const = 0;

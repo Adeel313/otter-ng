@@ -291,15 +291,12 @@ bool ContentFiltersManager::addUserRules(const QStringList &newRules)
 		SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
 	}
 
-	QTimer::singleShot(0, m_instance, [profileName]()
-	{
-		ContentFiltersProfile *profile(ContentFiltersManager::getProfile(profileName));
+	ContentFiltersProfile *profile(getProfile(profileName));
 
-		if (profile)
-		{
-			profile->clear();
-		}
-	});
+	if (profile)
+	{
+		profile->addRules(newRules);
+	}
 
 	return true;
 }

@@ -292,11 +292,14 @@ void QtWebEngineUrlRequestInterceptor::flushLearnedRules()
 
 	if (!rules.isEmpty())
 	{
+		const QUrl pageUrl(m_widget ? m_widget->getUrl() : QUrl());
+		const bool needsProfileRefresh(!getOption(SettingsManager::ContentBlocking_ProfilesOption, pageUrl).toStringList().contains(QLatin1String("user-rules")));
+
 		ContentFiltersManager::addUserRules(rules);
 
-		if (m_widget)
+		if (needsProfileRefresh && m_widget)
 		{
-			updateOptions(m_widget->getUrl());
+			updateOptions(pageUrl);
 		}
 	}
 }

@@ -28,9 +28,10 @@
 #include <QtCore/QBuffer>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMutexLocker>
 #include <QtCore/QSaveFile>
+#include <QtCore/QThread>
 #include <QtCore/QTextStream>
-#include <QtCore/QThreadPool>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
 
@@ -86,24 +87,42 @@ AdblockContentFiltersProfile::AdblockContentFiltersProfile(const ContentFiltersP
 
 void AdblockContentFiltersProfile::clear()
 {
+	QMutexLocker locker(&m_rulesMutex);
+
 	if (!m_wasLoaded)
 	{
 		return;
 	}
 
-	if (m_root)
-	{
-		QThreadPool::globalInstance()->start([&]()
-		{
-			delete m_root;
-		});
-	}
+	delete m_root;
+	m_root = nullptr;
 
 	m_cosmeticFiltersRules.clear();
 	m_cosmeticFiltersDomainExceptions.clear();
 	m_cosmeticFiltersDomainRules.clear();
 
 	m_wasLoaded = false;
+}
+
+void AdblockContentFiltersProfile::addRules(const QStringList &rules)
+{
+	{
+		QMutexLocker locker(&m_rulesMutex);
+
+		if (!m_wasLoaded)
+		{
+			loadRules();
+		}
+		else
+		{
+			for (const QString &rule: rules)
+			{
+				parseRuleLine(rule);
+			}
+		}
+	}
+
+	emit profileModified();
 }
 
 void AdblockContentFiltersProfile::loadHeader()
@@ -705,6 +724,8 @@ ContentFiltersProfile::ProfileSummary AdblockContentFiltersProfile::getProfileSu
 
 ContentFiltersManager::CosmeticFiltersResult AdblockContentFiltersProfile::getCosmeticFilters(const QStringList &domains, bool isDomainOnly)
 {
+	QMutexLocker locker(&m_rulesMutex);
+
 	if (!m_wasLoaded)
 	{
 		loadRules();
@@ -728,6 +749,7 @@ ContentFiltersManager::CosmeticFiltersResult AdblockContentFiltersProfile::getCo
 
 ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrl(const QUrl &baseUrl, const QUrl &requestUrl, NetworkManager::ResourceType resourceType)
 {
+	QMutexLocker locker(&m_rulesMutex);
 	ContentFiltersManager::CheckResult result;
 
 	if (!m_wasLoaded && !loadRules())

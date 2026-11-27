@@ -24,6 +24,7 @@
 
 #include "ContentFiltersManager.h"
 
+#include <QtCore/QMutex>
 #include <QtCore/QRegularExpression>
 
 namespace Otter
@@ -60,6 +61,7 @@ public:
 	explicit AdblockContentFiltersProfile(const ProfileSummary &summary, const QStringList &languages, ProfileFlags flags, QObject *parent = nullptr);
 
 	void clear() override;
+	void addRules(const QStringList &rules) override;
 	void setProfileSummary(const ProfileSummary &summary) override;
 	QString getName() const override;
 	QString getTitle() const override;
@@ -175,6 +177,7 @@ private:
 	ProfileError m_error;
 	ProfileFlags m_flags;
 	bool m_wasLoaded;
+	mutable QMutex m_rulesMutex;
 
 	static QHash<QString, RuleOption> m_options;
 	static QHash<NetworkManager::ResourceType, RuleOption> m_resourceTypes;
