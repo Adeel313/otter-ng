@@ -77,8 +77,6 @@ private:
 	void clearImageReloadUrl();
 
 	static WebBackend *m_backend;
-	static QSet<QString> m_observedAdHosts;
-	static QMutex m_observedAdHostsMutex;
 
 signals:
 	void pageInformationChanged(WebWidget::PageInformation, const QVariant &value);

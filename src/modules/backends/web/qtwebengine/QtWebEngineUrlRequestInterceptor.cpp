@@ -33,8 +33,6 @@ namespace Otter
 {
 
 WebBackend* QtWebEngineUrlRequestInterceptor::m_backend(nullptr);
-QSet<QString> QtWebEngineUrlRequestInterceptor::m_observedAdHosts;
-QMutex QtWebEngineUrlRequestInterceptor::m_observedAdHostsMutex;
 
 QtWebEngineUrlRequestInterceptor::QtWebEngineUrlRequestInterceptor(QtWebEngineWebWidget *parent) : QWebEngineUrlRequestInterceptor(parent),
 	m_widget(parent),
@@ -151,15 +149,6 @@ void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo
 
 			Console::addMessage(QCoreApplication::translate("main", "Request blocked by rule from profile %1:\n%2").arg(profile ? profile->getTitle() : QCoreApplication::translate("main", "(Unknown)"), result.rule), Console::NetworkCategory, Console::LogLevel, request.requestUrl().toString(), -1);
 
-			const QString blockedHost(Utils::extractHost(request.requestUrl()));
-
-			if (!blockedHost.isEmpty() && blockedHost != Utils::extractHost(request.firstPartyUrl()))
-			{
-				QMutexLocker locker(&m_observedAdHostsMutex);
-
-				m_observedAdHosts.insert(blockedHost);
-			}
-
 			if (storeBlockedUrl && !m_blockedElements.contains(request.requestUrl().url()))
 			{
 				m_blockedElements.append(request.requestUrl().url());
@@ -230,27 +219,18 @@ void QtWebEngineUrlRequestInterceptor::learnAdRequest(const QUrl &baseUrl, const
 		return;
 	}
 
+	// A shared CDN may serve both ads and essential application assets.
+	// Never promote a blocked path or a URL keyword to a host-wide rule.
+	static const QStringList adDomains({QLatin1String("doubleclick.net"), QLatin1String("googlesyndication.com"), QLatin1String("googleadservices.com"), QLatin1String("amazon-adsystem.com"), QLatin1String("adnxs.com"), QLatin1String("criteo.com"), QLatin1String("criteo.net"), QLatin1String("taboola.com"), QLatin1String("outbrain.com"), QLatin1String("pubmatic.com"), QLatin1String("rubiconproject.com"), QLatin1String("scorecardresearch.com"), QLatin1String("quantserve.com"), QLatin1String("chartbeat.com")});
 	bool isAdLike(false);
 
+	for (const QString &domain: adDomains)
 	{
-		QMutexLocker locker(&m_observedAdHostsMutex);
-
-		isAdLike = m_observedAdHosts.contains(requestHost);
-	}
-
-	const QString target(requestUrl.url().toLower());
-	static const QStringList indicators({QLatin1String("doubleclick"), QLatin1String("googlesyndication"), QLatin1String("googleadservices"), QLatin1String("amazon-adsystem"), QLatin1String("adnxs"), QLatin1String("adservice"), QLatin1String("criteo"), QLatin1String("taboola"), QLatin1String("outbrain"), QLatin1String("pubmatic"), QLatin1String("rubiconproject"), QLatin1String("scorecardresearch"), QLatin1String("quantserve"), QLatin1String("chartbeat"), QLatin1String("/ads/"), QLatin1String("/ad/"), QLatin1String("advertisement"), QLatin1String("banner"), QLatin1String("track"), QLatin1String("analytics"), QLatin1String("pixel")});
-
-	if (!isAdLike)
-	{
-		for (const QString &indicator: indicators)
+		if (requestHost == domain || requestHost.endsWith(QLatin1Char('.') + domain))
 		{
-			if (target.contains(indicator))
-			{
-				isAdLike = true;
+			isAdLike = true;
 
-				break;
-			}
+			break;
 		}
 	}
 
@@ -259,7 +239,7 @@ void QtWebEngineUrlRequestInterceptor::learnAdRequest(const QUrl &baseUrl, const
 		return;
 	}
 
-	const QString rule(requestHost + QLatin1String("$third-party,domain=") + baseHost);
+	const QString rule(QLatin1String("||") + requestHost + QLatin1String("^$third-party,domain=") + baseHost);
 
 	{
 		QMutexLocker locker(&m_learnedRulesMutex);
