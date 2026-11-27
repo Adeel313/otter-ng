@@ -320,7 +320,9 @@ void QtWebEngineUrlRequestInterceptor::updateOptions(const QUrl &url)
 
 	if (getOption(SettingsManager::ContentBlocking_EnableContentBlockingOption, url).toBool())
 	{
-		m_contentBlockingProfiles = ContentFiltersManager::getProfileIdentifiers(getOption(SettingsManager::ContentBlocking_ProfilesOption, url).toStringList());
+		const QStringList profileNames(getOption(SettingsManager::ContentBlocking_ProfilesOption, url).toStringList());
+		m_contentBlockingProfiles = ContentFiltersManager::getProfileIdentifiers(profileNames);
+		qDebug() << "OTTER-DEBUG content profiles" << profileNames << m_contentBlockingProfiles;
 	}
 	else
 	{

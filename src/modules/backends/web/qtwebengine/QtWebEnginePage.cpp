@@ -495,7 +495,7 @@ void QtWebEnginePage::handleLoadFinished()
 
 			if (file.open(QIODevice::ReadOnly))
 			{
-				runJavaScript(QString::fromLatin1(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)));
+				runJavaScript(QString::fromUtf8(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)));
 
 				file.close();
 			}
@@ -721,19 +721,10 @@ QtWebEngineWebWidget* QtWebEnginePage::createWidget(SessionsManager::OpenHints h
 
 QString QtWebEnginePage::createJavaScriptList(const QStringList &rules) const
 {
-	if (rules.isEmpty())
-	{
-		return {};
-	}
+	// JSON preserves CSS escapes, quotes and control characters in filter lists.
+	const QByteArray json(QJsonDocument(QJsonArray::fromStringList(rules)).toJson(QJsonDocument::Compact));
 
-	QStringList parsedRules(rules);
-
-	for (int i = 0; i < rules.count(); ++i)
-	{
-		parsedRules[i].replace(QLatin1Char('\''), QLatin1String("\\'"));
-	}
-
-	return QLatin1Char('\'') + parsedRules.join(QLatin1String("','")) + QLatin1Char('\'');
+	return QString::fromUtf8(json.mid(1, json.size() - 2));
 }
 
 QString QtWebEnginePage::createScriptSource(const QString &path, const QStringList &parameters) const
@@ -947,6 +938,22 @@ bool QtWebEnginePage::acceptNavigationRequest(const QUrl &url, NavigationType ty
 	for (const QWebEngineScript &script: navigationScripts)
 	{
 		scripts().remove(script);
+	}
+
+	if (m_widget && m_widget->getOption(SettingsManager::ContentBlocking_EnableContentBlockingOption, url).toBool())
+	{
+		const auto filters(ContentFiltersManager::getCosmeticFilters(ContentFiltersManager::getProfileIdentifiers(m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption, url).toStringList()), url));
+		QFile file(QLatin1String(":/modules/backends/web/qtwebengine/resources/hideElements.js"));
+
+		if (!filters.rules.isEmpty() && file.open(QIODevice::ReadOnly))
+		{
+			QWebEngineScript script;
+			script.setName(QLatin1String("otter-cosmetic-filters"));
+			script.setSourceCode(QString::fromUtf8(file.readAll()).arg(createJavaScriptList(filters.exceptions), createJavaScriptList(filters.rules)));
+			script.setWorldId(QWebEngineScript::ApplicationWorld);
+			script.setInjectionPoint(QWebEngineScript::DocumentCreation);
+			scripts().insert(script);
+		}
 	}
 
 	if (m_widget && m_widget->getOption(SettingsManager::Permissions_EnableImagesOption, url).toString() == QLatin1String("disabled"))

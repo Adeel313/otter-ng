@@ -401,7 +401,7 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrlSubstri
 
 			if (nextNode->value == QLatin1Char('^') && !character.isDigit() && !character.isLetter() && character != QLatin1Char('_') && character != QLatin1Char('-') && character != QLatin1Char('.') && character != QLatin1Char('%'))
 			{
-				currentResult = checkUrlSubstring(nextNode, substring.mid(i), currentRule, request);
+				currentResult = checkUrlSubstring(nextNode, substring.mid(i + 1), currentRule + character, request);
 
 				if (currentResult.isBlocked)
 				{
@@ -449,7 +449,7 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrlSubstri
 			continue;
 		}
 
-		currentResult = evaluateNodeRules(node, currentRule, request);
+		currentResult = evaluateNodeRules(childNode, currentRule, request);
 
 		if (currentResult.isBlocked)
 		{
@@ -466,6 +466,13 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrlSubstri
 
 ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkRuleMatch(const Node::Rule *rule, const QString &currentRule, const Request &request) const
 {
+	// Ordinary adblock rules apply to resources within a document, not to
+	// top-level navigation. Keep exceptions available for cosmetic filtering.
+	if (request.resourceType == NetworkManager::MainFrameType && !rule->isException)
+	{
+		return {};
+	}
+
 	switch (rule->ruleMatch)
 	{
 		case StartMatch:

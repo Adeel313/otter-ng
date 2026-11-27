@@ -28,6 +28,7 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QDebug>
 #include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
@@ -551,6 +552,11 @@ ContentFiltersManager::CheckResult ContentFiltersManager::checkUrl(const QVector
 
 		if (currentResult.isBlocked)
 		{
+			if (m_contentBlockingProfiles.at(index)->getName() == QLatin1String("user-rules"))
+			{
+				qDebug() << "OTTER-DEBUG user rule blocked" << currentResult.rule << baseUrl.url() << requestUrl.url();
+			}
+
 			result = currentResult;
 		}
 		else if (currentResult.isException)
