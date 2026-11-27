@@ -392,6 +392,28 @@ void SettingsManager::setOption(int identifier, const QVariant &value, const QSt
 	}
 }
 
+void SettingsManager::setDomainOption(int identifier, const QVariant &value, const QString &domain)
+{
+	if (domain.isEmpty())
+	{
+		return;
+	}
+
+	setOption(identifier, value, domain);
+	setOption(identifier, value, QLatin1String("*.") + domain);
+
+	const QString suffix(QLatin1Char('.') + domain);
+	const QString wildcardDomain(QLatin1String("*.") + domain);
+
+	for (const QString &host: getOverrideHosts(identifier))
+	{
+		if (host != domain && host != wildcardDomain && host.endsWith(suffix))
+		{
+			removeOverride(host, identifier);
+		}
+	}
+}
+
 SettingsManager* SettingsManager::getInstance()
 {
 	return m_instance;

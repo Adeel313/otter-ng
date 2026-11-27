@@ -135,6 +135,7 @@ QString formatFileTypes(const QStringList &filters = {});
 QString normalizeObjectName(QString name, const QString &suffix = {});
 QString normalizePath(const QString &path);
 QString getTopLevelDomain(const QUrl &url);
+QString getRegistrableDomain(const QString &domain);
 QString getStandardLocation(QStandardPaths::StandardLocation type);
 QUrl fromUserInput(const QString &input);
 QUrl expandUrl(const QUrl &url);

@@ -310,6 +310,7 @@ public:
 	static void removeOverride(const QString &host, int identifier = -1);
 	static void updateOptionDefinition(int identifier, const OptionDefinition &definition);
 	static void setOption(int identifier, const QVariant &value, const QString &host = {});
+	static void setDomainOption(int identifier, const QVariant &value, const QString &domain);
 	static SettingsManager* getInstance();
 	static QString createDisplayValue(int identifier, const QVariant &value);
 	static QString getGlobalPath();

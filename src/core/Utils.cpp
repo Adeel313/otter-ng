@@ -572,6 +572,28 @@ QString getTopLevelDomain(const QUrl &url)
 #endif
 }
 
+QString getRegistrableDomain(const QString &domain)
+{
+	const QStringList parts(domain.split(QLatin1Char('.')));
+
+	if (parts.count() < 2)
+	{
+		return domain;
+	}
+
+#if QT_VERSION >= 0x060000
+	for (int i = 1; i < parts.count(); ++i)
+	{
+		if (qIsEffectiveTLD(parts.mid(i).join(QLatin1Char('.'))))
+		{
+			return parts.mid(i - 1).join(QLatin1Char('.'));
+		}
+	}
+#endif
+
+	return parts.mid(parts.count() - 2).join(QLatin1Char('.'));
+}
+
 QString getStandardLocation(QStandardPaths::StandardLocation type)
 {
 	const QStringList paths(QStandardPaths::standardLocations(type));

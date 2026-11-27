@@ -7,9 +7,16 @@ The default status bar has an image dropdown before the zoom controls:
   starting new automatic image downloads.
 - **No images** blocks new image downloads and hides images already displayed,
   including image backgrounds. Changing back restores their display.
+- **Enable images for full domain** enables images for the whole website, not
+  just the current host. It stores an `enabled` override for the registrable
+  domain (for example `example.com`) and for `*.example.com`, and clears any
+  conflicting per-subdomain image overrides, so pages on `www.example.com`,
+  `shop.example.com` and the apex domain all load images.
 
-The selected mode belongs to the current tab. It does not change the global
-preference or create a website preference. The control follows the active tab
+The first three modes belong to the current tab. They do not change the global
+preference or create a website preference. The full domain option is the
+exception: it writes website preferences for the whole domain. The control
+follows the active tab
 and updates when the image preference is changed through Quick Preferences.
 It is disabled for internal pages such as preferences and history.
 

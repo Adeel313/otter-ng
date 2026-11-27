@@ -77,6 +77,7 @@ WebsitePreferencesDialog::WebsitePreferencesDialog(const QString &host, const QV
 	m_ui->enableImagesComboBox->addItem(tr("All images"), QLatin1String("enabled"));
 	m_ui->enableImagesComboBox->addItem(tr("Cached images"), QLatin1String("onlyCached"));
 	m_ui->enableImagesComboBox->addItem(tr("No images"), QLatin1String("disabled"));
+	m_ui->enableImagesComboBox->addItem(tr("Enable images for full domain"), QLatin1String("enabledForDomain"));
 
 	m_ui->enablePluginsComboBox->addItem(tr("Enabled"), QLatin1String("enabled"));
 	m_ui->enablePluginsComboBox->addItem(tr("On demand"), QLatin1String("onDemand"));
@@ -255,42 +256,58 @@ void WebsitePreferencesDialog::handleButtonClicked(QAbstractButton *button)
 	switch (m_ui->buttonBox->buttonRole(button))
 	{
 		case QDialogButtonBox::AcceptRole:
-			if (host.isEmpty())
 			{
-				return;
-			}
+				if (host.isEmpty())
+				{
+					return;
+				}
 
-			SettingsManager::setOption(SettingsManager::Content_DefaultCharacterEncodingOption, (m_ui->encodingOverrideCheckBox->isChecked() ? m_ui->encodingComboBox->currentText() : QString()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption, (m_ui->popupsPolicyOverrideCheckBox->isChecked() ? m_ui->popupsPolicyComboBox->currentData(Qt::UserRole).toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_EnableImagesOption, (m_ui->enableImagesOverrideCheckBox->isChecked() ? m_ui->enableImagesComboBox->currentData(Qt::UserRole).toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_EnablePluginsOption, (m_ui->enablePluginsOverrideCheckBox->isChecked() ? m_ui->enablePluginsComboBox->currentData(Qt::UserRole).toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Content_UserStyleSheetOption, (m_ui->userStyleSheetOverrideCheckBox->isChecked() ? m_ui->userStyleSheetFilePathWidget->getPath() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_DoNotTrackPolicyOption, (m_ui->doNotTrackOverrideCheckBox->isChecked() ? m_ui->doNotTrackComboBox->currentData().toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::History_RememberBrowsingOption, (m_ui->rememberBrowsingHistoryOverrideCheckBox->isChecked() ? m_ui->rememberBrowsingHistoryCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_CookiesPolicyOption, (m_ui->enableCookiesOverrideCheckBox->isChecked() ? (m_ui->enableCookiesCheckBox->isChecked() ? m_ui->cookiesPolicyComboBox->currentData().toString() : QLatin1String("ignore")) : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_CookiesKeepModeOption, (m_ui->keepCookiesModeOverrideCheckBox->isChecked() ? m_ui->keepCookiesModeComboBox->currentData().toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_ThirdPartyCookiesPolicyOption, (m_ui->thirdPartyCookiesPolicyOverrideCheckBox->isChecked() ? m_ui->thirdPartyCookiesPolicyComboBox->currentData().toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_EnableJavaScriptOption, (m_ui->enableJavaScriptOverrideCheckBox->isChecked() ? m_ui->enableJavaScriptCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanChangeWindowGeometryOption, (m_ui->canChangeWindowGeometryOverrideCheckBox->isChecked() ? m_ui->canChangeWindowGeometryCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanShowStatusMessagesOption, (m_ui->canShowStatusMessagesOverrideCheckBox->isChecked() ? m_ui->canShowStatusMessagesCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption, (m_ui->canAccessClipboardOverrideCheckBox->isChecked() ? m_ui->canAccessClipboardCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanReceiveRightClicksOption, (m_ui->canReceiveRightClicksOverrideCheckBox->isChecked() ? m_ui->canReceiveRightClicksCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanCloseWindowsOption, (m_ui->canCloseWindowsOverrideCheckBox->isChecked() ? m_ui->canCloseWindowsComboBox->currentData().toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Permissions_EnableFullScreenOption, (m_ui->enableFullScreenOverrideCheckBox->isChecked() ? m_ui->enableFullScreenComboBox->currentData().toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_EnableReferrerOption, (m_ui->sendReferrerOverrideCheckBox->isChecked() ? m_ui->sendReferrerCheckBox->isChecked() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_UserAgentOption, (m_ui->userAgentOverrideCheckBox->isChecked() ? m_ui->userAgentComboBox->currentData(UserAgentsModel::IdentifierRole).toString() : QVariant()), host);
-			SettingsManager::setOption(SettingsManager::Network_ProxyOption, (m_ui->proxyOverrideCheckBox->isChecked() ? m_ui->proxyComboBox->currentData(ProxiesModel::IdentifierRole).toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Content_DefaultCharacterEncodingOption, (m_ui->encodingOverrideCheckBox->isChecked() ? m_ui->encodingComboBox->currentText() : QString()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanOpenWindowsOption, (m_ui->popupsPolicyOverrideCheckBox->isChecked() ? m_ui->popupsPolicyComboBox->currentData(Qt::UserRole).toString() : QVariant()), host);
+				const QString imagesPolicy(m_ui->enableImagesOverrideCheckBox->isChecked() ? m_ui->enableImagesComboBox->currentData(Qt::UserRole).toString() : QString());
 
-			if (m_ui->contentBlockingProfilesOverrideCheckBox->isChecked())
-			{
-				m_ui->contentBlockingProfilesViewWidget->save();
-			}
-			else
-			{
-				SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, {}, host);
-			}
+				if (imagesPolicy == QLatin1String("enabledForDomain"))
+				{
+					const QString domain(Utils::getRegistrableDomain(host));
 
-			accept();
+					if (!domain.isEmpty())
+					{
+						SettingsManager::setDomainOption(SettingsManager::Permissions_EnableImagesOption, QLatin1String("enabled"), domain);
+					}
+				}
+				else
+				{
+					SettingsManager::setOption(SettingsManager::Permissions_EnableImagesOption, (m_ui->enableImagesOverrideCheckBox->isChecked() ? QVariant(imagesPolicy) : QVariant()), host);
+				}
+				SettingsManager::setOption(SettingsManager::Permissions_EnablePluginsOption, (m_ui->enablePluginsOverrideCheckBox->isChecked() ? m_ui->enablePluginsComboBox->currentData(Qt::UserRole).toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Content_UserStyleSheetOption, (m_ui->userStyleSheetOverrideCheckBox->isChecked() ? m_ui->userStyleSheetFilePathWidget->getPath() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_DoNotTrackPolicyOption, (m_ui->doNotTrackOverrideCheckBox->isChecked() ? m_ui->doNotTrackComboBox->currentData().toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::History_RememberBrowsingOption, (m_ui->rememberBrowsingHistoryOverrideCheckBox->isChecked() ? m_ui->rememberBrowsingHistoryCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_CookiesPolicyOption, (m_ui->enableCookiesOverrideCheckBox->isChecked() ? (m_ui->enableCookiesCheckBox->isChecked() ? m_ui->cookiesPolicyComboBox->currentData().toString() : QLatin1String("ignore")) : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_CookiesKeepModeOption, (m_ui->keepCookiesModeOverrideCheckBox->isChecked() ? m_ui->keepCookiesModeComboBox->currentData().toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_ThirdPartyCookiesPolicyOption, (m_ui->thirdPartyCookiesPolicyOverrideCheckBox->isChecked() ? m_ui->thirdPartyCookiesPolicyComboBox->currentData().toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_EnableJavaScriptOption, (m_ui->enableJavaScriptOverrideCheckBox->isChecked() ? m_ui->enableJavaScriptCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanChangeWindowGeometryOption, (m_ui->canChangeWindowGeometryOverrideCheckBox->isChecked() ? m_ui->canChangeWindowGeometryCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanShowStatusMessagesOption, (m_ui->canShowStatusMessagesOverrideCheckBox->isChecked() ? m_ui->canShowStatusMessagesCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanAccessClipboardOption, (m_ui->canAccessClipboardOverrideCheckBox->isChecked() ? m_ui->canAccessClipboardCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanReceiveRightClicksOption, (m_ui->canReceiveRightClicksOverrideCheckBox->isChecked() ? m_ui->canReceiveRightClicksCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_ScriptsCanCloseWindowsOption, (m_ui->canCloseWindowsOverrideCheckBox->isChecked() ? m_ui->canCloseWindowsComboBox->currentData().toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Permissions_EnableFullScreenOption, (m_ui->enableFullScreenOverrideCheckBox->isChecked() ? m_ui->enableFullScreenComboBox->currentData().toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_EnableReferrerOption, (m_ui->sendReferrerOverrideCheckBox->isChecked() ? m_ui->sendReferrerCheckBox->isChecked() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_UserAgentOption, (m_ui->userAgentOverrideCheckBox->isChecked() ? m_ui->userAgentComboBox->currentData(UserAgentsModel::IdentifierRole).toString() : QVariant()), host);
+				SettingsManager::setOption(SettingsManager::Network_ProxyOption, (m_ui->proxyOverrideCheckBox->isChecked() ? m_ui->proxyComboBox->currentData(ProxiesModel::IdentifierRole).toString() : QVariant()), host);
+
+				if (m_ui->contentBlockingProfilesOverrideCheckBox->isChecked())
+				{
+					m_ui->contentBlockingProfilesViewWidget->save();
+				}
+				else
+				{
+					SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, {}, host);
+				}
+
+				accept();
+			}
 
 			break;
 		case QDialogButtonBox::ResetRole:
@@ -391,7 +408,11 @@ void WebsitePreferencesDialog::updateValues(bool isChecked)
 
 	m_ui->popupsPolicyComboBox->setCurrentIndex((popupsPolicyIndex < 0) ? 0 : popupsPolicyIndex);
 
-	const int enableImagesIndex(m_ui->enableImagesComboBox->findData(SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, (m_ui->enableImagesOverrideCheckBox->isChecked() ? host : QString())).toString()));
+	const QString imagesPolicy(SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, (m_ui->enableImagesOverrideCheckBox->isChecked() ? host : QString())).toString());
+	const QString domain(Utils::getRegistrableDomain(host));
+	const bool hasDomainOverride(!domain.isEmpty() && SettingsManager::hasOverride(domain, SettingsManager::Permissions_EnableImagesOption) && SettingsManager::hasOverride(QLatin1String("*.") + domain, SettingsManager::Permissions_EnableImagesOption) && SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, domain).toString() == QLatin1String("enabled") && SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, QLatin1String("*.") + domain).toString() == QLatin1String("enabled"));
+	const bool isDomainPolicy(hasDomainOverride && SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, host).toString() == QLatin1String("enabled"));
+	const int enableImagesIndex(m_ui->enableImagesComboBox->findData(isDomainPolicy ? QLatin1String("enabledForDomain") : imagesPolicy));
 
 	m_ui->enableImagesComboBox->setCurrentIndex((enableImagesIndex < 0) ? 0 : enableImagesIndex);
 

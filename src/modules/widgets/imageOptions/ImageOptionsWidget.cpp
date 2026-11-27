@@ -20,6 +20,7 @@
 #include "ImageOptionsWidget.h"
 #include "../../../core/SettingsManager.h"
 #include "../../../core/ThemesManager.h"
+#include "../../../core/Utils.h"
 #include "../../../ui/ToolBarWidget.h"
 #include "../../../ui/MainWindow.h"
 
@@ -44,7 +45,7 @@ ImageOptionsWidget::ImageOptionsWidget(Window *window, const ToolBarsManager::To
 	QActionGroup *group(new QActionGroup(menu));
 	group->setExclusive(true);
 
-	for (const QString &policy: {QLatin1String("enabled"), QLatin1String("onlyCached"), QLatin1String("disabled")})
+	for (const QString &policy: {QLatin1String("enabled"), QLatin1String("onlyCached"), QLatin1String("disabled"), QLatin1String("enabledForDomain")})
 	{
 		QAction *action(menu->addAction(QString()));
 		action->setCheckable(true);
@@ -68,7 +69,22 @@ ImageOptionsWidget::ImageOptionsWidget(Window *window, const ToolBarsManager::To
 	{
 		if (m_window && m_window->getType() == QLatin1String("web"))
 		{
-			m_window->setOption(SettingsManager::Permissions_EnableImagesOption, action->data());
+			if (action->data() == QLatin1String("enabledForDomain"))
+			{
+				const QString domain(Utils::getRegistrableDomain(m_window->getUrl().host()));
+
+				if (!domain.isEmpty())
+				{
+					SettingsManager::setDomainOption(SettingsManager::Permissions_EnableImagesOption, QLatin1String("enabled"), domain);
+				}
+
+				m_window->setOption(SettingsManager::Permissions_EnableImagesOption, QLatin1String("enabled"));
+			}
+			else
+			{
+				m_window->setOption(SettingsManager::Permissions_EnableImagesOption, action->data());
+			}
+
 			updateState();
 		}
 	});
@@ -131,13 +147,16 @@ void ImageOptionsWidget::updateState()
 
 	if (menu())
 	{
-		const QStringList titles({tr("Show images"), tr("Cached images"), tr("No images")});
+		const QString domain(Utils::getRegistrableDomain(m_window ? m_window->getUrl().host() : QString()));
+		const bool hasDomainOverride(!domain.isEmpty() && SettingsManager::hasOverride(domain, SettingsManager::Permissions_EnableImagesOption) && SettingsManager::hasOverride(QLatin1String("*.") + domain, SettingsManager::Permissions_EnableImagesOption) && SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, domain).toString() == QLatin1String("enabled") && SettingsManager::getOption(SettingsManager::Permissions_EnableImagesOption, QLatin1String("*.") + domain).toString() == QLatin1String("enabled"));
+		const bool isDomainPolicy(hasDomainOverride && m_policy == QLatin1String("enabled"));
+		const QStringList titles({tr("Show images"), tr("Cached images"), tr("No images"), tr("Enable images for full domain")});
 		const QList<QAction*> actions(menu()->actions());
 
 		for (int i = 0; i < actions.count(); ++i)
 		{
 			actions.at(i)->setText(titles.value(i));
-			actions.at(i)->setChecked(actions.at(i)->data().toString() == m_policy);
+			actions.at(i)->setChecked((i == 3) ? isDomainPolicy : (!isDomainPolicy && actions.at(i)->data().toString() == m_policy));
 		}
 	}
 
