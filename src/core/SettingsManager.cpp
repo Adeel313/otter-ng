@@ -56,7 +56,7 @@ void SettingsManager::createInstance(const QString &path)
 	m_optionIdentifierEnumerator = staticMetaObject.indexOfEnumerator(QLatin1String("OptionIdentifier").data());
 	m_identifierCounter = staticMetaObject.enumerator(m_optionIdentifierEnumerator).keyCount();
 
-	m_definitions.reserve(m_identifierCounter);
+	m_definitions.resize(m_identifierCounter);
 
 	registerOption(AddressField_CompletionDisplayModeOption, EnumerationType, QLatin1String("compact"), {QLatin1String("compact"), QLatin1String("columns")});
 	registerOption(AddressField_CompletionModeOption, EnumerationType, QLatin1String("inlineAndPopup"), {QLatin1String("none"), QLatin1String("inline"), QLatin1String("popup"), QLatin1String("inlineAndPopup")});
@@ -325,7 +325,7 @@ void SettingsManager::registerOption(int identifier, OptionType type, const QVar
 	definition.flags = flags;
 	definition.identifier = identifier;
 
-	m_definitions.append(definition);
+	m_definitions[identifier] = definition;
 }
 
 void SettingsManager::saveOption(const QString &path, const QString &key, const QVariant &value, OptionType type)

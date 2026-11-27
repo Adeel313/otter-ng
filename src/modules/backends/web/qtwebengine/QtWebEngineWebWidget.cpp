@@ -65,6 +65,9 @@
 #include <QtPrintSupport/QPrintPreviewDialog>
 #include <QtWebEngineCore/QWebEngineCookieStore>
 #include <QtWebEngineCore/QWebEngineFindTextResult>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+#include <QtWebEngineCore/QWebEngineLoadingInfo>
+#endif
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 #include <QtWebEngineCore/QWebEngineFrame>
 #endif
@@ -181,6 +184,16 @@ QtWebEngineWebWidget::QtWebEngineWebWidget(const QVariantMap &parameters, WebBac
 	});
 	connect(m_page, &QtWebEnginePage::loadStarted, this, &QtWebEngineWebWidget::handleLoadStarted);
 	connect(m_page, &QtWebEnginePage::loadFinished, this, &QtWebEngineWebWidget::handleLoadFinished);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+	connect(m_page, &QtWebEnginePage::loadingChanged, this, [this](const QWebEngineLoadingInfo &info)
+	{
+		if (info.status() == QWebEngineLoadingInfo::LoadFailedStatus && !isPrivate())
+		{
+			qWarning() << "OTTER-NET load failed" << info.url().adjusted(QUrl::RemoveUserInfo | QUrl::RemoveQuery | QUrl::RemoveFragment)
+				<< "domain" << info.errorDomain() << "code" << info.errorCode() << info.errorString();
+		}
+	});
+#endif
 	connect(m_page, &QtWebEnginePage::linkHovered, this, &QtWebEngineWebWidget::setStatusMessageOverride);
 	connect(m_page, &QtWebEnginePage::iconChanged, this, &QtWebEngineWebWidget::notifyIconChanged);
 	connect(m_page, &QtWebEnginePage::requestedPopupWindow, this, &QtWebEngineWebWidget::requestedPopupWindow);
