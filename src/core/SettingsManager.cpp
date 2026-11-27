@@ -128,6 +128,7 @@ void SettingsManager::createInstance(const QString &path)
 	registerOption(Content_VisitedLinkColorOption, ColorType, QColor(0x55, 0x1A, 0x8B));
 	registerOption(Content_ZoomTextOnlyOption, BooleanType, false);
 	registerOption(ContentBlocking_EnableContentBlockingOption, BooleanType, true);
+	registerOption(ContentBlocking_LearnAdRulesOption, BooleanType, true);
 	registerOption(ContentBlocking_IgnoreHostsOption, ListType, QStringList());
 	registerOption(ContentBlocking_ProfilesOption, ListType, QStringList());
 	registerOption(History_BrowsingLimitAmountGlobalOption, IntegerType, 1000);

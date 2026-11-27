@@ -24,15 +24,26 @@
 #include "Console.h"
 #include "JsonSettings.h"
 #include "SessionsManager.h"
+#include "SettingsManager.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QMutex>
+#include <QtCore/QMutexLocker>
+#include <QtCore/QTextStream>
 #include <QtCore/QTimer>
 #include <QtCore/QTimeZone>
 
 namespace Otter
 {
+
+namespace
+{
+QMutex userRulesMutex;
+}
 
 ContentFiltersManager* ContentFiltersManager::m_instance(nullptr);
 QVector<ContentFiltersProfile*> ContentFiltersManager::m_contentBlockingProfiles;
@@ -179,6 +190,118 @@ void ContentFiltersManager::initialize()
 	}
 
 	m_contentBlockingProfiles.squeeze();
+}
+
+bool ContentFiltersManager::addUserRule(const QString &rule)
+{
+	return addUserRules({rule});
+}
+
+bool ContentFiltersManager::addUserRules(const QStringList &newRules)
+{
+	if (newRules.isEmpty())
+	{
+		return false;
+	}
+
+	const QString profileName(QLatin1String("user-rules"));
+	const QString path(SessionsManager::getWritableDataPath(QLatin1String("contentBlocking/%1.txt")).arg(profileName));
+	QStringList rules;
+	bool hasChanges(false);
+
+	{
+		QMutexLocker locker(&userRulesMutex);
+		QFile file(path);
+
+		if (file.exists() && file.open(QIODevice::ReadOnly))
+		{
+			QTextStream stream(&file);
+
+			while (!stream.atEnd())
+			{
+				rules.append(stream.readLine());
+			}
+
+			file.close();
+		}
+
+		if (rules.isEmpty())
+		{
+			rules.append(QLatin1String("[Adblock Plus 2.0]"));
+			rules.append(QLatin1String("! Title: Custom site rules"));
+		}
+
+		for (const QString &rule: newRules)
+		{
+			if (rule.isEmpty() || rule.contains(QLatin1Char('\n')) || rule.length() > 512 || rules.contains(rule))
+			{
+				continue;
+			}
+
+			rules.append(rule);
+			hasChanges = true;
+		}
+
+		if (!hasChanges)
+		{
+			return false;
+		}
+
+		while (rules.count() > 502)
+		{
+			rules.removeAt(2);
+		}
+
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			Console::addMessage(QCoreApplication::translate("main", "Failed to save user content blocking rules: %1").arg(path), Console::OtherCategory, Console::ErrorLevel);
+
+			return false;
+		}
+
+		QTextStream stream(&file);
+
+		for (const QString &line: rules)
+		{
+			stream << line << QLatin1Char('\n');
+		}
+
+		file.close();
+	}
+
+	initialize();
+
+	if (!getProfile(profileName))
+	{
+		ContentFiltersProfile::ProfileSummary summary;
+		summary.name = profileName;
+		summary.title = QCoreApplication::translate("main", "Custom site rules");
+		summary.category = ContentFiltersProfile::AdvertisementsCategory;
+		summary.cosmeticFiltersMode = AllFilters;
+
+		addProfile(new AdblockContentFiltersProfile(summary, {}, ContentFiltersProfile::HasCustomTitleFlag, m_instance));
+	}
+
+	QStringList profiles(SettingsManager::getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList());
+
+	if (!profiles.contains(profileName))
+	{
+		profiles.append(profileName);
+
+		SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
+	}
+
+	QTimer::singleShot(0, m_instance, [profileName]()
+	{
+		ContentFiltersProfile *profile(ContentFiltersManager::getProfile(profileName));
+
+		if (profile)
+		{
+			profile->clear();
+		}
+	});
+
+	return true;
 }
 
 void ContentFiltersManager::timerEvent(QTimerEvent *event)

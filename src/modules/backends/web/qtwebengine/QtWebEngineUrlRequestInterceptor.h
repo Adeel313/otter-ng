@@ -26,6 +26,7 @@
 #include "../../../../core/NetworkManagerFactory.h"
 
 #include <QtCore/QMutex>
+#include <QtCore/QSet>
 #include <QtCore/QUrl>
 #include <QtWebEngineCore/QWebEngineUrlRequestInterceptor>
 
@@ -61,16 +62,23 @@ private:
 	QVector<NetworkManager::ResourceInformation> m_blockedRequests;
 	QVector<int> m_contentBlockingProfiles;
 	QMutex m_imageReloadMutex;
+	QMutex m_learnedRulesMutex;
+	QSet<QString> m_pendingLearnedRules;
 	NetworkManagerFactory::DoNotTrackPolicy m_doNotTrackPolicy;
 	quint64 m_startedRequestsAmount;
 	bool m_areImagesEnabled;
 	bool m_canSendReferrer;
 	bool m_isWorkingOffline;
+	bool m_isFlushScheduled;
 
+	void learnAdRequest(const QUrl &baseUrl, const QUrl &requestUrl, NetworkManager::ResourceType resourceType);
+	void flushLearnedRules();
 	void setImageReloadUrl(const QUrl &url);
 	void clearImageReloadUrl();
 
 	static WebBackend *m_backend;
+	static QSet<QString> m_observedAdHosts;
+	static QMutex m_observedAdHostsMutex;
 
 signals:
 	void pageInformationChanged(WebWidget::PageInformation, const QVariant &value);

@@ -21,7 +21,6 @@
 #include "QtWebEnginePage.h"
 #include "QtWebEngineUrlRequestInterceptor.h"
 #include "QtWebEngineWebBackend.h"
-#include "../../../../core/AdblockContentFiltersProfile.h"
 #include "../../../../core/Application.h"
 #include "../../../../core/Console.h"
 #include "../../../../core/ContentFiltersManager.h"
@@ -54,7 +53,6 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
-#include <QtCore/QTextStream>
 #include <QtCore/QtMath>
 #include <algorithm>
 #include <QtGui/QClipboard>
@@ -1911,61 +1909,8 @@ void QtWebEngineWebWidget::blockElementAtClickPosition()
 			return;
 		}
 
+		ContentFiltersManager::addUserRule(host + QLatin1String("##") + selector);
 		const QString profileName(QLatin1String("user-rules"));
-		const QString path(SessionsManager::getWritableDataPath(QLatin1String("contentBlocking/%1.txt")).arg(profileName));
-		QFile file(path);
-		QStringList rules;
-
-		if (file.exists() && file.open(QIODevice::ReadOnly))
-		{
-			QTextStream stream(&file);
-
-			while (!stream.atEnd())
-			{
-				rules.append(stream.readLine());
-			}
-
-			file.close();
-		}
-
-		if (rules.isEmpty())
-		{
-			rules.append(QLatin1String("[Adblock Plus 2.0]"));
-			rules.append(QLatin1String("! Title: Custom site rules"));
-		}
-
-		const QString rule(host + QLatin1String("##") + selector);
-
-		if (!rules.contains(rule))
-		{
-			rules.append(rule);
-		}
-
-		if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
-		{
-			QTextStream stream(&file);
-
-			for (const QString &line: rules)
-			{
-				stream << line << QLatin1Char('\n');
-			}
-
-			file.close();
-		}
-
-		ContentFiltersManager::initialize();
-
-		if (!ContentFiltersManager::getProfile(profileName))
-		{
-			ContentFiltersProfile::ProfileSummary summary;
-			summary.name = profileName;
-			summary.title = tr("Custom site rules");
-			summary.category = ContentFiltersProfile::AdvertisementsCategory;
-			summary.cosmeticFiltersMode = ContentFiltersManager::AllFilters;
-
-			ContentFiltersManager::addProfile(new AdblockContentFiltersProfile(summary, {}, ContentFiltersProfile::HasCustomTitleFlag, ContentFiltersManager::getInstance()));
-		}
-
 		QStringList profiles(getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList());
 
 		if (!profiles.contains(profileName))
@@ -1974,13 +1919,6 @@ void QtWebEngineWebWidget::blockElementAtClickPosition()
 
 			SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
 			setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
-		}
-
-		ContentFiltersProfile *profile(ContentFiltersManager::getProfile(profileName));
-
-		if (profile)
-		{
-			profile->clear();
 		}
 
 		triggerAction(ActionsManager::ReloadAction);

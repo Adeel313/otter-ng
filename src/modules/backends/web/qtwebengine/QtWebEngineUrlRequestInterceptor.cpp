@@ -26,12 +26,15 @@
 #include "../../../../core/WebBackend.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QMetaObject>
 #include <QtCore/QMutexLocker>
 
 namespace Otter
 {
 
 WebBackend* QtWebEngineUrlRequestInterceptor::m_backend(nullptr);
+QSet<QString> QtWebEngineUrlRequestInterceptor::m_observedAdHosts;
+QMutex QtWebEngineUrlRequestInterceptor::m_observedAdHostsMutex;
 
 QtWebEngineUrlRequestInterceptor::QtWebEngineUrlRequestInterceptor(QtWebEngineWebWidget *parent) : QWebEngineUrlRequestInterceptor(parent),
 	m_widget(parent),
@@ -39,7 +42,8 @@ QtWebEngineUrlRequestInterceptor::QtWebEngineUrlRequestInterceptor(QtWebEngineWe
 	m_startedRequestsAmount(0),
 	m_areImagesEnabled(true),
 	m_canSendReferrer(true),
-	m_isWorkingOffline(false)
+	m_isWorkingOffline(false),
+	m_isFlushScheduled(false)
 {
 }
 
@@ -139,6 +143,15 @@ void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo
 
 			Console::addMessage(QCoreApplication::translate("main", "Request blocked by rule from profile %1:\n%2").arg(profile ? profile->getTitle() : QCoreApplication::translate("main", "(Unknown)"), result.rule), Console::NetworkCategory, Console::LogLevel, request.requestUrl().toString(), -1);
 
+			const QString blockedHost(Utils::extractHost(request.requestUrl()));
+
+			if (!blockedHost.isEmpty() && blockedHost != Utils::extractHost(request.firstPartyUrl()))
+			{
+				QMutexLocker locker(&m_observedAdHostsMutex);
+
+				m_observedAdHosts.insert(blockedHost);
+			}
+
 			if (storeBlockedUrl && !m_blockedElements.contains(request.requestUrl().url()))
 			{
 				m_blockedElements.append(request.requestUrl().url());
@@ -159,6 +172,8 @@ void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo
 
 			return;
 		}
+
+		learnAdRequest(request.firstPartyUrl(), request.requestUrl(), resourceType);
 	}
 
 	++m_startedRequestsAmount;
@@ -177,6 +192,113 @@ void QtWebEngineUrlRequestInterceptor::interceptRequest(QWebEngineUrlRequestInfo
 	}
 
 	emit pageInformationChanged(WebWidget::RequestsStartedInformation, m_startedRequestsAmount);
+}
+
+void QtWebEngineUrlRequestInterceptor::learnAdRequest(const QUrl &baseUrl, const QUrl &requestUrl, NetworkManager::ResourceType resourceType)
+{
+	if (!getOption(SettingsManager::ContentBlocking_LearnAdRulesOption, baseUrl).toBool())
+	{
+		return;
+	}
+
+	if (resourceType != NetworkManager::ScriptType && resourceType != NetworkManager::ImageType && resourceType != NetworkManager::ObjectType && resourceType != NetworkManager::SubFrameType && resourceType != NetworkManager::XmlHttpRequestType)
+	{
+		return;
+	}
+
+	const QString baseHost(Utils::extractHost(baseUrl));
+	const QString requestHost(Utils::extractHost(requestUrl));
+
+	if (baseHost.isEmpty() || requestHost.isEmpty() || baseHost == requestHost || baseHost == QLatin1String("localhost") || requestHost == QLatin1String("localhost"))
+	{
+		return;
+	}
+
+	const QString relatedBase(QLatin1Char('.') + baseHost);
+	const QString relatedRequest(QLatin1Char('.') + requestHost);
+
+	if (requestHost.endsWith(relatedBase) || baseHost.endsWith(relatedRequest))
+	{
+		return;
+	}
+
+	bool isAdLike(false);
+
+	{
+		QMutexLocker locker(&m_observedAdHostsMutex);
+
+		isAdLike = m_observedAdHosts.contains(requestHost);
+	}
+
+	const QString target(requestUrl.url().toLower());
+	static const QStringList indicators({QLatin1String("doubleclick"), QLatin1String("googlesyndication"), QLatin1String("googleadservices"), QLatin1String("amazon-adsystem"), QLatin1String("adnxs"), QLatin1String("adservice"), QLatin1String("criteo"), QLatin1String("taboola"), QLatin1String("outbrain"), QLatin1String("pubmatic"), QLatin1String("rubiconproject"), QLatin1String("scorecardresearch"), QLatin1String("quantserve"), QLatin1String("chartbeat"), QLatin1String("/ads/"), QLatin1String("/ad/"), QLatin1String("advertisement"), QLatin1String("banner"), QLatin1String("track"), QLatin1String("analytics"), QLatin1String("pixel")});
+
+	if (!isAdLike)
+	{
+		for (const QString &indicator: indicators)
+		{
+			if (target.contains(indicator))
+			{
+				isAdLike = true;
+
+				break;
+			}
+		}
+	}
+
+	if (!isAdLike)
+	{
+		return;
+	}
+
+	const QString rule(requestHost + QLatin1String("$third-party,domain=") + baseHost);
+
+	{
+		QMutexLocker locker(&m_learnedRulesMutex);
+
+		if (m_pendingLearnedRules.contains(rule))
+		{
+			return;
+		}
+
+		m_pendingLearnedRules.insert(rule);
+
+		if (m_isFlushScheduled)
+		{
+			return;
+		}
+
+		m_isFlushScheduled = true;
+	}
+
+	QMetaObject::invokeMethod(this, [this]()
+	{
+		flushLearnedRules();
+	}, Qt::QueuedConnection);
+}
+
+void QtWebEngineUrlRequestInterceptor::flushLearnedRules()
+{
+	const QStringList rules([&]()
+	{
+		QMutexLocker locker(&m_learnedRulesMutex);
+		const QStringList pendingRules(m_pendingLearnedRules.values());
+
+		m_pendingLearnedRules.clear();
+		m_isFlushScheduled = false;
+
+		return pendingRules;
+	}());
+
+	if (!rules.isEmpty())
+	{
+		ContentFiltersManager::addUserRules(rules);
+
+		if (m_widget)
+		{
+			updateOptions(m_widget->getUrl());
+		}
+	}
 }
 
 void QtWebEngineUrlRequestInterceptor::resetStatistics()

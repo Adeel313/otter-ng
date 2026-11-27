@@ -60,6 +60,8 @@ public:
 
 	static void createInstance();
 	static void initialize();
+	static bool addUserRule(const QString &rule);
+	static bool addUserRules(const QStringList &rules);
 	static void addProfile(ContentFiltersProfile *profile);
 	static void removeProfile(ContentFiltersProfile *profile, bool removeFile = false);
 	static ContentFiltersManager* getInstance();

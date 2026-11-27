@@ -224,7 +224,8 @@ public:
 		Updates_AutomaticInstallOption,
 		Updates_CheckIntervalOption,
 		Updates_LastCheckOption,
-		Updates_ServerUrlOption
+		Updates_ServerUrlOption,
+		ContentBlocking_LearnAdRulesOption
 	};
 
 	Q_ENUM(OptionIdentifier)
