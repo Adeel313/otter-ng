@@ -121,11 +121,13 @@ protected:
 	void notifyWatchedDataChanged(ChangeWatcher watcher);
 	void updateOptions(const QUrl &url);
 	void updateWatchedData(ChangeWatcher watcher) override;
+	void addContextMenuActions(QMenu *menu) override;
 	void setHistory(QDataStream &stream);
 	void setOptions(const QHash<int, QVariant> &options, const QStringList &excludedOptions = {}) override;
 	QWebEnginePage* getPage() const;
 	QString getImageVisibilityScript(bool hideImages) const;
 	QString parsePosition(const QString &script, const QPoint &position) const;
+	void blockElementAtClickPosition();
 	QDateTime getLastUrlClickTime() const;
 	QStringList getBlockedElements() const;
 	QVector<LinkUrl> processLinks(const QVariantList &rawLinks) const;

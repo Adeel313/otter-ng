@@ -34,6 +34,7 @@
 #include <QtNetwork/QSslCipher>
 #include <QtNetwork/QSslError>
 #include <QtPrintSupport/QPrinter>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QWidget>
 
 namespace Otter
@@ -280,6 +281,7 @@ protected:
 	explicit WebWidget(WebBackend *backend, ContentsWidget *parent = nullptr);
 
 	void timerEvent(QTimerEvent *event) override;
+	virtual void addContextMenuActions(QMenu *menu);
 	void openUrl(const QUrl &url, SessionsManager::OpenHints hints);
 	void startReloadTimer();
 	void startTransfer(Transfer *transfer, bool lockEventLoop = false);

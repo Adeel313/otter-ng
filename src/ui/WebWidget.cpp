@@ -560,7 +560,13 @@ void WebWidget::showContextMenu(const QPoint &position)
 
 	Menu menu(this);
 	menu.load(QLatin1String("menu/webWidget.json"), includeSections, executor);
+	addContextMenuActions(&menu);
 	menu.exec(mapToGlobal(hitPosition));
+}
+
+void WebWidget::addContextMenuActions(QMenu *menu)
+{
+	Q_UNUSED(menu)
 }
 
 void WebWidget::setParent(QWidget *parent)

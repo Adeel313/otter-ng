@@ -21,12 +21,15 @@
 #include "QtWebEnginePage.h"
 #include "QtWebEngineUrlRequestInterceptor.h"
 #include "QtWebEngineWebBackend.h"
+#include "../../../../core/AdblockContentFiltersProfile.h"
 #include "../../../../core/Application.h"
 #include "../../../../core/Console.h"
+#include "../../../../core/ContentFiltersManager.h"
 #include "../../../../core/GesturesManager.h"
 #include "../../../../core/NetworkManager.h"
 #include "../../../../core/NetworkManagerFactory.h"
 #include "../../../../core/NotesManager.h"
+#include "../../../../core/SessionsManager.h"
 #include "../../../../core/SearchEnginesManager.h"
 #include "../../../../core/ThemesManager.h"
 #include "../../../../core/TransfersManager.h"
@@ -43,6 +46,7 @@
 
 #include <QtCore/QEventLoop>
 #include <QtCore/QDebug>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeData>
 #include <QtCore/QJsonArray>
@@ -50,6 +54,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QTemporaryFile>
 #include <QtCore/QTimer>
+#include <QtCore/QTextStream>
 #include <QtCore/QtMath>
 #include <algorithm>
 #include <QtGui/QClipboard>
@@ -57,6 +62,8 @@
 #include <QtGui/QImageWriter>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPainter>
+#include <QtWidgets/qaction.h>
+#include <QtWidgets/QMenu>
 #include <QtPrintSupport/QPrintPreviewDialog>
 #include <QtWebEngineCore/QWebEngineCookieStore>
 #include <QtWebEngineCore/QWebEngineFindTextResult>
@@ -1828,6 +1835,156 @@ QWebEnginePage* QtWebEngineWebWidget::getPage() const
 QString QtWebEngineWebWidget::parsePosition(const QString &script, const QPoint &position) const
 {
 	return script.arg(position.x() / m_page->zoomFactor()).arg(position.y() / m_page->zoomFactor());
+}
+
+void QtWebEngineWebWidget::addContextMenuActions(QMenu *menu)
+{
+	const QUrl url(getUrl());
+
+	if (url.scheme() != QLatin1String("http") && url.scheme() != QLatin1String("https"))
+	{
+		return;
+	}
+
+	QAction *action(menu->addAction(tr("Block element on this site")));
+
+	connect(action, &QAction::triggered, this, &QtWebEngineWebWidget::blockElementAtClickPosition);
+}
+
+void QtWebEngineWebWidget::blockElementAtClickPosition()
+{
+	const QString host(Utils::extractHost(getUrl()));
+
+	if (host.isEmpty())
+	{
+		return;
+	}
+
+	m_page->runJavaScript(parsePosition(QStringLiteral(R"JS((function()
+{
+	const x = %1;
+	const y = %2;
+	const element = document.elementFromPoint((x + window.scrollX), (y + window.scrollY));
+
+	if (!element || element === document.documentElement || element === document.body)
+	{
+		return null;
+	}
+
+	const escape = (window.CSS && CSS.escape) ? CSS.escape : function(value) { return value; };
+
+	if (element.id && /^[A-Za-z_][A-Za-z0-9_-]*$/.test(element.id))
+	{
+		return '#' + escape(element.id);
+	}
+
+	const classes = Array.prototype.slice.call(element.classList).filter(function(name) { return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(name); });
+
+	for (const className of classes)
+	{
+		if (document.querySelectorAll('.' + escape(className)).length === 1)
+		{
+			return element.tagName.toLowerCase() + '.' + escape(className);
+		}
+	}
+
+	let parts = [];
+	let node = element;
+
+	while (node && node !== document.body && node.nodeType === 1)
+	{
+		const tag = node.tagName.toLowerCase();
+		const siblings = node.parentElement ? Array.prototype.filter.call(node.parentElement.children, function(child) { return child.tagName.toLowerCase() === tag; }) : [];
+
+		parts.unshift((siblings.length > 1) ? (tag + ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')') : tag);
+
+		node = node.parentElement;
+	}
+
+	return parts.join(' > ');
+})())JS"), getClickPosition()), [this, host](const QVariant &result)
+	{
+		const QString selector(result.toString().trimmed());
+
+		if (selector.isEmpty() || selector.contains(QLatin1Char('\n')) || selector.length() > 512)
+		{
+			return;
+		}
+
+		const QString profileName(QLatin1String("user-rules"));
+		const QString path(SessionsManager::getWritableDataPath(QLatin1String("contentBlocking/%1.txt")).arg(profileName));
+		QFile file(path);
+		QStringList rules;
+
+		if (file.exists() && file.open(QIODevice::ReadOnly))
+		{
+			QTextStream stream(&file);
+
+			while (!stream.atEnd())
+			{
+				rules.append(stream.readLine());
+			}
+
+			file.close();
+		}
+
+		if (rules.isEmpty())
+		{
+			rules.append(QLatin1String("[Adblock Plus 2.0]"));
+			rules.append(QLatin1String("! Title: Custom site rules"));
+		}
+
+		const QString rule(host + QLatin1String("##") + selector);
+
+		if (!rules.contains(rule))
+		{
+			rules.append(rule);
+		}
+
+		if (file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			QTextStream stream(&file);
+
+			for (const QString &line: rules)
+			{
+				stream << line << QLatin1Char('\n');
+			}
+
+			file.close();
+		}
+
+		ContentFiltersManager::initialize();
+
+		if (!ContentFiltersManager::getProfile(profileName))
+		{
+			ContentFiltersProfile::ProfileSummary summary;
+			summary.name = profileName;
+			summary.title = tr("Custom site rules");
+			summary.category = ContentFiltersProfile::AdvertisementsCategory;
+			summary.cosmeticFiltersMode = ContentFiltersManager::AllFilters;
+
+			ContentFiltersManager::addProfile(new AdblockContentFiltersProfile(summary, {}, ContentFiltersProfile::HasCustomTitleFlag, ContentFiltersManager::getInstance()));
+		}
+
+		QStringList profiles(getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList());
+
+		if (!profiles.contains(profileName))
+		{
+			profiles.append(profileName);
+
+			SettingsManager::setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
+			setOption(SettingsManager::ContentBlocking_ProfilesOption, profiles);
+		}
+
+		ContentFiltersProfile *profile(ContentFiltersManager::getProfile(profileName));
+
+		if (profile)
+		{
+			profile->clear();
+		}
+
+		triggerAction(ActionsManager::ReloadAction);
+	});
 }
 
 QString QtWebEngineWebWidget::getTitle() const
