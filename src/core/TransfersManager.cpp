@@ -102,7 +102,7 @@ void Transfer::timerEvent(QTimerEvent *event)
 	{
 		const qint64 previousSpeed(m_speed);
 
-		m_speed = (m_bytesReceivedDifference * 2);
+		m_speed = (m_bytesReceivedDifference * 1000 / m_updateInterval);
 		m_bytesReceivedDifference = 0;
 
 		if (m_speed == previousSpeed)
@@ -128,7 +128,7 @@ void Transfer::timerEvent(QTimerEvent *event)
 
 			speedSum /= m_speeds.count();
 
-			m_remainingTime = qRound(static_cast<qreal>(m_bytesTotal - m_bytesReceived) / static_cast<qreal>(speedSum));
+			m_remainingTime = ((speedSum > 0) ? qRound(static_cast<qreal>(m_bytesTotal - m_bytesReceived) / static_cast<qreal>(speedSum)) : -1);
 		}
 
 		emit changed();
@@ -408,6 +408,9 @@ void Transfer::handleDownloadProgress(qint64 bytesReceived, qint64 bytesTotal)
 	m_bytesTotal = (m_bytesStart + bytesTotal);
 
 	emit progressChanged(bytesReceived, bytesTotal);
+	// Transfer views subscribe to changed(), not progressChanged(). Progress
+	// must refresh even when the speed timer sees an unchanged transfer rate.
+	emit changed();
 }
 
 void Transfer::handleDataAvailable()
@@ -598,7 +601,9 @@ void Transfer::setUpdateInterval(int interval)
 		m_updateTimer = 0;
 	}
 
-	if (interval > 0 && m_updateInterval > 0 && m_state == Transfer::RunningState)
+	// Backends such as Qt WebEngine report state through the virtual getter;
+	// their base-class m_state can remain UnknownState throughout the download.
+	if (interval > 0 && getState() == Transfer::RunningState)
 	{
 		m_updateTimer = startTimer(m_updateInterval);
 	}

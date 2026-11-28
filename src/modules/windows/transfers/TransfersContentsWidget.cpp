@@ -30,9 +30,11 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QtMath>
 #include <QtGui/QClipboard>
+#include <QtGui/QCursor>
 #include <QtGui/QKeyEvent>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
+#include <QtWidgets/QToolTip>
 
 namespace Otter
 {
@@ -54,6 +56,8 @@ void ProgressBarDelegate::setEditorData(QWidget *editor, const QModelIndex &inde
 	const bool isIndeterminate(index.data(TransfersContentsWidget::BytesTotalRole).toLongLong() <= 0);
 	const bool hasError(state == Transfer::UnknownState || state == Transfer::ErrorState);
 
+	editor->setToolTip(index.data(Qt::ToolTipRole).toString());
+	progressBar->setToolTip(editor->toolTip());
 	progressBar->setHasError(hasError);
 	progressBar->setRange(0, ((isIndeterminate && !hasError) ? 0 : 100));
 	progressBar->setValue(isIndeterminate ? (hasError ? 0 : -1) : index.data(TransfersContentsWidget::ProgressRole).toInt());
@@ -113,6 +117,23 @@ TransfersContentsWidget::TransfersContentsWidget(const QVariantMap &parameters, 
 	if (isSidebarPanel())
 	{
 		m_ui->detailsWidget->hide();
+
+		// Keep each file's progress visible in the narrow sidebar rather than
+		// placing it beyond the full downloads page's wide metadata columns.
+		for (int column: {SizeColumn, TimeElapsedColumn, SpeedColumn, TimeStartedColumn, TimeFinishedColumn})
+		{
+			m_ui->transfersViewWidget->hideColumn(column);
+		}
+
+		m_model->setHeaderData(FilenameColumn, Qt::Horizontal, 140, HeaderViewWidget::WidthRole);
+		m_model->setHeaderData(ProgressColumn, Qt::Horizontal, 110, HeaderViewWidget::WidthRole);
+		QHeaderView *header(m_ui->transfersViewWidget->header());
+		header->setStretchLastSection(false);
+		header->setSectionResizeMode(DecorationColumn, QHeaderView::Fixed);
+		header->setSectionResizeMode(FilenameColumn, QHeaderView::Stretch);
+		header->setSectionResizeMode(ProgressColumn, QHeaderView::Fixed);
+		header->resizeSection(DecorationColumn, 28);
+		header->resizeSection(ProgressColumn, 110);
 	}
 
 	connect(TransfersManager::getInstance(), &TransfersManager::transferStarted, this, &TransfersContentsWidget::handleTransferAdded);
@@ -250,6 +271,11 @@ void TransfersContentsWidget::handleTransferAdded(Transfer *transfer)
 	m_ui->transfersViewWidget->openPersistentEditor(items[ProgressColumn]->index());
 
 	handleTransferChanged(transfer);
+
+	if (isSidebarPanel())
+	{
+		m_ui->transfersViewWidget->selectRow(items[0]->index());
+	}
 }
 
 void TransfersContentsWidget::handleTransferChanged(Transfer *transfer)
@@ -278,7 +304,12 @@ void TransfersContentsWidget::handleTransferChanged(Transfer *transfer)
 			break;
 	}
 
-	const QString toolTip(tr("<div style=\"white-space:pre;\">Source: %1\nTarget: %2\nSize: %3\nDownloaded: %4\nProgress: %5</div>").arg(transfer->getSource().toDisplayString().toHtmlEscaped(), transfer->getTarget().toHtmlEscaped(), (isIndeterminate ? tr("Unknown") : Utils::formatUnit(transfer->getBytesTotal(), false, 1, true)), Utils::formatUnit(transfer->getBytesReceived(), false, 1, true), (isIndeterminate ? tr("Unknown") : QStringLiteral("%1%").arg(Utils::calculatePercent(transfer->getBytesReceived(), transfer->getBytesTotal()), 0, 'f', 1))));
+	const QString speed((transfer->getState() == Transfer::RunningState) ? (QLatin1Char('\n') + tr("Speed: %1").arg(Utils::formatUnit(transfer->getSpeed(), true, 1, true))) : QString());
+	const QString toolTip(tr("<div style=\"white-space:pre;\">Source: %1\nTarget: %2\nSize: %3\nDownloaded: %4\nProgress: %5%6</div>").arg(transfer->getSource().toDisplayString().toHtmlEscaped(), transfer->getTarget().toHtmlEscaped(), (isIndeterminate ? tr("Unknown") : Utils::formatUnit(transfer->getBytesTotal(), false, 1, true)), Utils::formatUnit(transfer->getBytesReceived(), false, 1, true), (isIndeterminate ? tr("Unknown") : QStringLiteral("%1%").arg(Utils::calculatePercent(transfer->getBytesReceived(), transfer->getBytesTotal()), 0, 'f', 1)), speed));
+	QWidget *viewport(m_ui->transfersViewWidget->viewport());
+	const QModelIndex hoveredIndex(m_ui->transfersViewWidget->indexAt(viewport->mapFromGlobal(QCursor::pos())));
+	const bool refreshToolTip(isVisible() && QToolTip::isVisible() && hoveredIndex.isValid() && hoveredIndex.row() == row
+		&& QToolTip::text() == m_model->index(row, FilenameColumn).data(Qt::ToolTipRole).toString());
 
 	for (int i = 0; i < m_model->columnCount(); ++i)
 	{
@@ -330,6 +361,13 @@ void TransfersContentsWidget::handleTransferChanged(Transfer *transfer)
 			default:
 				break;
 		}
+	}
+
+	// Updating ToolTipRole or QWidget::toolTip alone leaves an already visible
+	// tooltip unchanged. Refresh only the download currently under the pointer.
+	if (refreshToolTip)
+	{
+		QToolTip::showText(QCursor::pos(), toolTip, viewport, m_ui->transfersViewWidget->visualRect(hoveredIndex));
 	}
 
 	if (m_ui->transfersViewWidget->hasSelection())

@@ -167,6 +167,14 @@ void SidebarWidget::reload()
 	updatePanels();
 }
 
+void SidebarWidget::focusPanel()
+{
+	if (ContentsWidget *panel = m_panels.value(m_currentPanel))
+	{
+		panel->triggerAction(ActionsManager::ActivateContentAction);
+	}
+}
+
 void SidebarWidget::addWebPanel()
 {
 	const MainWindow *mainWindow(MainWindow::findMainWindow(this));

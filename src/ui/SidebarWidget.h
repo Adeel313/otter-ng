@@ -45,6 +45,7 @@ public:
 	~SidebarWidget();
 
 	void reload();
+	void focusPanel();
 	static QString getPanelTitle(const QString &identifier);
 	static QUrl getPanelUrl(const QString &identifier);
 	static QIcon getPanelIcon(const QString &identifier);

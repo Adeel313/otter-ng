@@ -1083,7 +1083,13 @@ void MainWindow::triggerAction(int identifier, const QVariantMap &parameters, Ac
 
 				if (definition.isValid())
 				{
-					definition.currentPanel = ((definition.currentPanel == panel) ? QString() : panel);
+					const bool showPanel(parameters.value(QLatin1String("isChecked"), definition.currentPanel != panel).toBool());
+					definition.currentPanel = (showPanel ? panel : QString());
+
+					if (showPanel && !panel.isEmpty() && !definition.panels.contains(panel))
+					{
+						definition.panels.append(panel);
+					}
 
 					ToolBarsManager::setToolBar(definition);
 
@@ -1909,7 +1915,20 @@ void MainWindow::handleTransferStarted()
 	}
 	else if (action == QLatin1String("openPanel"))
 	{
-		triggerAction(ActionsManager::ShowPanelAction, {{QLatin1String("sidebar"), ToolBarsManager::SideBar}, {QLatin1String("panel"), QLatin1String("transfers")}});
+		if (Application::getActiveWindow() != this)
+		{
+			return;
+		}
+
+		triggerAction(ActionsManager::ShowPanelAction, {{QLatin1String("sidebar"), ToolBarsManager::SideBar}, {QLatin1String("panel"), QLatin1String("transfers")}, {QLatin1String("isChecked"), true}});
+
+		if (ToolBarWidget *toolBar = m_toolBars.value(ToolBarsManager::SideBar))
+		{
+			if (SidebarWidget *sidebar = toolBar->findChild<SidebarWidget*>())
+			{
+				sidebar->focusPanel();
+			}
+		}
 	}
 }
 
