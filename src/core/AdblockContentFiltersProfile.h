@@ -27,6 +27,8 @@
 #include <QtCore/QMutex>
 #include <QtCore/QRegularExpression>
 
+#include <deque>
+
 namespace Otter
 {
 
@@ -59,6 +61,8 @@ public:
 	};
 
 	explicit AdblockContentFiltersProfile(const ProfileSummary &summary, const QStringList &languages, ProfileFlags flags, QObject *parent = nullptr);
+
+	~AdblockContentFiltersProfile() override;
 
 	void clear() override;
 	void addRules(const QStringList &rules) override;
@@ -119,6 +123,7 @@ protected:
 	{
 		struct Rule final
 		{
+			Rule *next = nullptr;
 			QString rule;
 			QStringList blockedDomains;
 			QStringList allowedDomains;
@@ -131,9 +136,12 @@ protected:
 
 		~Node();
 
+		// Most trie nodes have one child and no rules. Keep empty containers
+		// out of each character node and link siblings/rules only as needed.
 		QChar value;
-		QVarLengthArray<Node*, 1> children;
-		QVarLengthArray<Rule*, 1> rules;
+		Node *firstChild = nullptr;
+		Node *nextSibling = nullptr;
+		Rule *firstRule = nullptr;
 	};
 
 	struct Request final
@@ -166,6 +174,9 @@ protected slots:
 	void handleJobFinished(bool isSuccess);
 
 private:
+	// deque keeps node addresses stable while avoiding a heap allocation
+	// (and allocator metadata) for every character in the filter trie.
+	std::deque<Node> m_nodes;
 	Node *m_root;
 	DataFetchJob *m_dataFetchJob;
 	ProfileSummary m_summary;

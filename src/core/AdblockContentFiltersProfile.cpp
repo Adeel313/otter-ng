@@ -35,6 +35,8 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMessageBox>
 
+#include <memory>
+
 namespace Otter
 {
 
@@ -43,13 +45,11 @@ QHash<NetworkManager::ResourceType, AdblockContentFiltersProfile::RuleOption> Ad
 
 AdblockContentFiltersProfile::Node::~Node()
 {
-	for (Node *node: children)
+	while (firstRule)
 	{
-		delete node;
-	}
+		Rule *rule(firstRule);
+		firstRule = rule->next;
 
-	for (Node::Rule *rule: rules)
-	{
 		delete rule;
 	}
 }
@@ -85,6 +85,11 @@ AdblockContentFiltersProfile::AdblockContentFiltersProfile(const ContentFiltersP
 	loadHeader();
 }
 
+AdblockContentFiltersProfile::~AdblockContentFiltersProfile()
+{
+	clear();
+}
+
 void AdblockContentFiltersProfile::clear()
 {
 	QMutexLocker locker(&m_rulesMutex);
@@ -94,8 +99,8 @@ void AdblockContentFiltersProfile::clear()
 		return;
 	}
 
-	delete m_root;
 	m_root = nullptr;
+	m_nodes.clear();
 
 	m_cosmeticFiltersRules.clear();
 	m_cosmeticFiltersDomainExceptions.clear();
@@ -229,7 +234,7 @@ void AdblockContentFiltersProfile::parseRuleLine(const QString &rule)
 		return;
 	}
 
-	Node::Rule *definition(new Node::Rule());
+	auto definition(std::make_unique<Node::Rule>());
 	definition->rule = rule;
 	definition->isException = line.startsWith(QLatin1String("@@"));
 
@@ -309,8 +314,9 @@ void AdblockContentFiltersProfile::parseRuleLine(const QString &rule)
 	for (const QChar value: std::as_const(line))
 	{
 		bool hasChildren(false);
+		Node *lastChild(nullptr);
 
-		for (Node *nextNode: node->children)
+		for (Node *nextNode = node->firstChild; nextNode; nextNode = nextNode->nextSibling)
 		{
 			if (nextNode->value == value)
 			{
@@ -320,27 +326,38 @@ void AdblockContentFiltersProfile::parseRuleLine(const QString &rule)
 
 				break;
 			}
+
+			lastChild = nextNode;
 		}
 
 		if (!hasChildren)
 		{
-			Node *newNode(new Node());
+			m_nodes.emplace_back();
+			Node *newNode(&m_nodes.back());
 			newNode->value = value;
 
-			if (value == QLatin1Char('^'))
+			if (value == QLatin1Char('^') || !lastChild)
 			{
-				node->children.insert(node->children.begin(), newNode);
+				newNode->nextSibling = node->firstChild;
+				node->firstChild = newNode;
 			}
 			else
 			{
-				node->children.append(newNode);
+				lastChild->nextSibling = newNode;
 			}
 
 			node = newNode;
 		}
 	}
 
-	node->rules.append(definition);
+	Node::Rule **nextRule(&node->firstRule);
+
+	while (*nextRule)
+	{
+		nextRule = &(*nextRule)->next;
+	}
+
+	*nextRule = definition.release();
 }
 
 QMultiHash<QString, QString> AdblockContentFiltersProfile::parseStyleSheetRule(const QStringList &line)
@@ -378,7 +395,7 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrlSubstri
 			return currentResult;
 		}
 
-		for (const Node *nextNode: node->children)
+		for (const Node *nextNode = node->firstChild; nextNode; nextNode = nextNode->nextSibling)
 		{
 			if (nextNode->value == QLatin1Char('*'))
 			{
@@ -442,7 +459,7 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::checkUrlSubstri
 		return currentResult;
 	}
 
-	for (Node *childNode: node->children)
+	for (const Node *childNode = node->firstChild; childNode; childNode = childNode->nextSibling)
 	{
 		if (childNode->value != QLatin1Char('^'))
 		{
@@ -787,13 +804,8 @@ ContentFiltersManager::CheckResult AdblockContentFiltersProfile::evaluateNodeRul
 {
 	ContentFiltersManager::CheckResult result;
 
-	for (Node::Rule *rule: node->rules)
+	for (const Node::Rule *rule = node->firstRule; rule; rule = rule->next)
 	{
-		if (!rule)
-		{
-			continue;
-		}
-
 		ContentFiltersManager::CheckResult currentResult(checkRuleMatch(rule, currentRule, request));
 
 		if (currentResult.isBlocked)
@@ -1077,7 +1089,8 @@ bool AdblockContentFiltersProfile::loadRules()
 	QTextStream stream(&file);
 	stream.readLine(); // skip header
 
-	m_root = new Node();
+	m_nodes.emplace_back();
+	m_root = &m_nodes.back();
 
 	while (!stream.atEnd())
 	{

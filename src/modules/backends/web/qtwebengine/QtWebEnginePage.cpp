@@ -487,7 +487,7 @@ void QtWebEnginePage::handleLoadFinished()
 	if (m_widget)
 	{
 		const QUrl url(m_widget->getUrl());
-		const ContentFiltersManager::CosmeticFiltersResult cosmeticFilters(ContentFiltersManager::getCosmeticFilters(ContentFiltersManager::getProfileIdentifiers(m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption).toStringList()), url));
+		const ContentFiltersManager::CosmeticFiltersResult cosmeticFilters(m_widget->getOption(SettingsManager::ContentBlocking_EnableContentBlockingOption, url).toBool() ? ContentFiltersManager::getCosmeticFilters(ContentFiltersManager::getProfileIdentifiers(m_widget->getOption(SettingsManager::ContentBlocking_ProfilesOption, url).toStringList()), url) : ContentFiltersManager::CosmeticFiltersResult());
 
 		if (!cosmeticFilters.rules.isEmpty() || !cosmeticFilters.exceptions.isEmpty())
 		{
@@ -495,7 +495,9 @@ void QtWebEnginePage::handleLoadFinished()
 
 			if (file.open(QIODevice::ReadOnly))
 			{
-				runJavaScript(QString::fromUtf8(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)));
+				// Use the same world as the navigation script so it can disconnect
+				// the previous observer and release its captured selector lists.
+				runJavaScript(QString::fromUtf8(file.readAll()).arg(createJavaScriptList(cosmeticFilters.exceptions), createJavaScriptList(cosmeticFilters.rules)), QWebEngineScript::ApplicationWorld);
 
 				file.close();
 			}
