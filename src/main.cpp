@@ -21,6 +21,7 @@
 #include "core/Application.h"
 #include "core/SessionsManager.h"
 #include "core/SettingsManager.h"
+#include "core/WebEngineConfiguration.h"
 #include "ui/MainWindow.h"
 #include "ui/StartupDialog.h"
 #ifdef OTTER_ENABLE_CRASH_DUMPS
@@ -157,6 +158,11 @@ void otterInstallCrashDumps()
 int main(int argc, char *argv[])
 {
 	QT_REQUIRE_VERSION(argc, argv, QT_VERSION_STR)
+
+#ifdef OTTER_ENABLE_QTWEBENGINE
+	// Configure Chromium before QApplication and the first WebEngine profile.
+	qputenv("QTWEBENGINE_CHROMIUM_FLAGS", configureWebEngineDownloadFlags(qgetenv("QTWEBENGINE_CHROMIUM_FLAGS")));
+#endif
 
 #if defined(Q_OS_LINUX)
 	// Some bundled QtWebEngine builds do not find the host Fontconfig paths
