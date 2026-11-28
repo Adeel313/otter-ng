@@ -120,7 +120,7 @@ void QtWebEngineInspectorWidget::showEvent(QShowEvent *event)
 }
 
 QtWebEngineWebWidget::QtWebEngineWebWidget(const QVariantMap &parameters, WebBackend *backend, ContentsWidget *parent) : WebWidget(backend, parent),
-	m_webView(nullptr),
+	m_webView(new QWebEngineView(this)),
 	m_inspectorWidget(nullptr),
 	m_page(new QtWebEnginePage(SessionsManager::calculateOpenHints(parameters).testFlag(SessionsManager::PrivateOpen), this)),
 	m_requestInterceptor(new QtWebEngineUrlRequestInterceptor(this)),
@@ -138,6 +138,25 @@ QtWebEngineWebWidget::QtWebEngineWebWidget(const QVariantMap &parameters, WebBac
 	m_isTypedIn(false)
 {
 	setFocusPolicy(Qt::StrongFocus);
+
+	// Bind before navigation can create a renderer delegate for an unattached page.
+	m_webView->setPage(m_page);
+	m_webView->setContextMenuPolicy(Qt::CustomContextMenu);
+	m_webView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	m_webView->installEventFilter(this);
+
+	const QList<QWidget*> descendants(m_webView->findChildren<QWidget*>());
+
+	for (QWidget *descendant : descendants)
+	{
+		descendant->installEventFilter(this);
+	}
+
+	QVBoxLayout *layout(new QVBoxLayout(this));
+	layout->addWidget(m_webView);
+	layout->setContentsMargins(0, 0, 0, 0);
+
+	setLayout(layout);
 
 	m_page->setUrlRequestInterceptor(m_requestInterceptor);
 	m_imageReloadTimer->setInterval(100);
@@ -317,8 +336,6 @@ void QtWebEngineWebWidget::showEvent(QShowEvent *event)
 {
 	WebWidget::showEvent(event);
 
-	ensureInitialized();
-
 	if (m_focusProxyTimer == 0)
 	{
 		m_focusProxyTimer = startTimer(500);
@@ -338,34 +355,7 @@ void QtWebEngineWebWidget::focusInEvent(QFocusEvent *event)
 {
 	WebWidget::focusInEvent(event);
 
-	ensureInitialized();
-
 	m_webView->setFocus();
-}
-
-void QtWebEngineWebWidget::ensureInitialized()
-{
-	if (!m_webView)
-	{
-		m_webView = new QWebEngineView(this);
-		m_webView->setPage(m_page);
-		m_webView->setContextMenuPolicy(Qt::CustomContextMenu);
-		m_webView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-		m_webView->installEventFilter(this);
-
-		const QList<QWidget*> descendants(m_webView->findChildren<QWidget*>());
-
-		for (QWidget *descendant : descendants)
-		{
-			descendant->installEventFilter(this);
-		}
-
-		QVBoxLayout *layout(new QVBoxLayout(this));
-		layout->addWidget(m_webView);
-		layout->setContentsMargins(0, 0, 0, 0);
-
-		setLayout(layout);
-	}
 }
 
 bool QtWebEngineWebWidget::hasEditableFocus()
@@ -896,20 +886,14 @@ void QtWebEngineWebWidget::triggerAction(int identifier, const QVariantMap &para
 
 			break;
 		case ActionsManager::ScrollPageLeftAction:
-			ensureInitialized();
-
 			m_page->runJavaScript(QStringLiteral("window.scrollBy(-%1, 0)").arg(m_webView->width()));
 
 			break;
 		case ActionsManager::ScrollPageRightAction:
-			ensureInitialized();
-
 			m_page->runJavaScript(QStringLiteral("window.scrollBy(%1, 0)").arg(m_webView->width()));
 
 			break;
 		case ActionsManager::ActivateContentAction:
-			ensureInitialized();
-
 			m_webView->setFocus();
 
 			m_page->runJavaScript(QLatin1String("let element = document.activeElement; if (element && element.tagName && (element.tagName.toLowerCase() == 'input' || element.tagName.toLowerCase() == 'textarea'))) { document.activeElement.blur(); }"));
@@ -2022,11 +2006,6 @@ QIcon QtWebEngineWebWidget::getIcon() const
 
 QPixmap QtWebEngineWebWidget::createThumbnail(const QSize &size)
 {
-	if (!m_webView)
-	{
-		return {};
-	}
-
 	if ((size.isNull() || size == m_thumbnail.size()) && ((!m_thumbnail.isNull() && qFuzzyCompare(m_thumbnail.devicePixelRatio(), devicePixelRatio())) || m_loadingState == OngoingLoadingState))
 	{
 		return m_thumbnail;
