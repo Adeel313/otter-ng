@@ -186,6 +186,13 @@ void Window::triggerAction(int identifier, const QVariantMap &parameters, Action
 			{
 				requestClose();
 
+				if (m_isAboutToClose)
+				{
+					// Closing a result tab must return to its source, regardless
+					// of which unrelated tab was active most recently.
+					m_mainWindow->setActiveWindowByIdentifier(m_openerIdentifier);
+				}
+
 				break;
 			}
 
@@ -765,14 +772,34 @@ bool Window::canCloseOnBack() const
 		return false;
 	}
 
-	const Session::Window::History history(m_contentsWidget->getHistory());
+	const Window *opener(m_mainWindow->getWindowByIdentifier(m_openerIdentifier));
 
-	if (history.entries.isEmpty())
+	if (!opener || opener == this || opener->isAboutToClose())
 	{
 		return false;
 	}
 
-	return (history.index <= 0 || (history.index == 1 && Utils::isUrlEmpty(QUrl(history.entries.value(0).url))));
+	const Session::Window::History history(m_contentsWidget->getHistory());
+
+	if (history.entries.isEmpty() || history.index < 0 || history.index >= history.entries.count())
+	{
+		return false;
+	}
+
+	// A new browsing context can retain its source URL before loading the
+	// result. Going back to that entry should return to the existing source
+	// tab rather than load a second copy of the search results.
+	for (int index = 0; index < history.index; ++index)
+	{
+		const QUrl url(history.entries.at(index).url);
+
+		if (!Utils::isUrlEmpty(url) && url != opener->getUrl())
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 bool Window::canZoom() const
